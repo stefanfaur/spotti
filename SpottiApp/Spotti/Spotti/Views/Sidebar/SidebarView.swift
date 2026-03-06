@@ -45,9 +45,8 @@ struct SidebarView: View {
 
             Spacer()
         }
-        .padding(.top, 48)
+        .padding(.top, 12)
         .frame(width: 240)
-        .background(.ultraThinMaterial)
         .onAppear {
             if engine.libraryContent == nil {
                 engine.fetchLibrary()

@@ -83,15 +83,23 @@ struct MainLayout: View {
 
     var body: some View {
         ZStack {
-            VStack(spacing: 0) {
-                HStack(spacing: 0) {
+            VStack(spacing: 8) {
+                HStack(spacing: 8) {
                     SidebarView()
                         .frame(width: 240)
+                        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+
                     MainContentView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                PlayerBarView(showNowPlaying: $showNowPlaying)
-                    .frame(height: 80)
+
+                GlassEffectContainer(spacing: 16) {
+                    PlayerBarView(showNowPlaying: $showNowPlaying)
+                        .frame(height: 80)
+                        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                }
             }
+            .padding(8)
 
             if showNowPlaying {
                 NowPlayingFullView(showNowPlaying: $showNowPlaying)

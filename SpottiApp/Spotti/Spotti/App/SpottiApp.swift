@@ -18,7 +18,6 @@ struct SpottiApp: App {
                 .environmentObject(theme)
                 .frame(minWidth: 900, minHeight: 600)
         }
-        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1100, height: 700)
         .windowResizability(.contentMinSize)
     }
