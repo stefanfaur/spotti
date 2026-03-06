@@ -89,25 +89,25 @@ struct PlayerBarView: View {
                 HStack(spacing: 12) {
                     Button { engine.toggleShuffle() } label: {
                         Image(systemName: "shuffle")
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundStyle(engine.shuffleEnabled ? theme.accentColor : .primary)
-                            .frame(width: 32, height: 32)
+                            .frame(width: 26, height: 26)
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
 
                     Button { engine.previous() } label: {
                         Image(systemName: "backward.fill")
-                            .font(.title3)
-                            .frame(width: 40, height: 40)
+                            .font(.callout)
+                            .frame(width: 34, height: 34)
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
 
                     Button { engine.togglePlayPause() } label: {
                         Image(systemName: engine.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.title2)
-                            .frame(width: 48, height: 48)
+                            .font(.title3)
+                            .frame(width: 40, height: 40)
                             .contentTransition(.symbolEffect(.replace.byLayer.downUp))
                     }
                     .buttonStyle(.glassProminent)
@@ -117,17 +117,17 @@ struct PlayerBarView: View {
 
                     Button { engine.next() } label: {
                         Image(systemName: "forward.fill")
-                            .font(.title3)
-                            .frame(width: 40, height: 40)
+                            .font(.callout)
+                            .frame(width: 34, height: 34)
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
 
                     Button { engine.cycleRepeat() } label: {
                         Image(systemName: engine.repeatMode == 2 ? "repeat.1" : "repeat")
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundStyle(engine.repeatMode > 0 ? theme.accentColor : .primary)
-                            .frame(width: 32, height: 32)
+                            .frame(width: 26, height: 26)
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
@@ -138,6 +138,7 @@ struct PlayerBarView: View {
                 seekBar(duration: track.durationMs)
             }
         }
+        .padding(.top, engine.currentTrack != nil ? 6 : 0)
         .frame(maxWidth: 400)
     }
 
