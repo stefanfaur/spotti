@@ -2,7 +2,8 @@ import SwiftUI
 
 struct AlbumDetailView: View {
     let albumId: String
-    @EnvironmentObject var engine: SpottiEngine
+    @EnvironmentObject private var engine: SpottiEngine
+    @EnvironmentObject private var theme: ThemeEngine
 
     var body: some View {
         ScrollView {
@@ -31,7 +32,7 @@ struct AlbumDetailView: View {
                 RoundedRectangle(cornerRadius: 8).fill(.quaternary)
             }
             .frame(width: 200, height: 200)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(.rect(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Album")
@@ -55,12 +56,21 @@ struct AlbumDetailView: View {
                 Button(action: { playAll(album) }) {
                     Label("Play", systemImage: "play.fill")
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.glassProminent)
                 .padding(.top, 4)
             }
             Spacer()
         }
         .padding()
+        .background(alignment: .top) {
+            LinearGradient(
+                colors: [theme.dominantColor.opacity(0.25), .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 300)
+            .ignoresSafeArea()
+        }
     }
 
     @ViewBuilder
@@ -92,6 +102,7 @@ struct AlbumDetailView: View {
                     let uris = album.tracks.map(\.uri)
                     engine.loadContext(uris: uris, index: UInt32(index))
                 }
+                .hoverHighlight()
             }
         }
     }

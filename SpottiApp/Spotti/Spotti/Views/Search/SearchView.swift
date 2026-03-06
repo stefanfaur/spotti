@@ -2,8 +2,9 @@ import SwiftUI
 import Combine
 
 struct SearchView: View {
-    @EnvironmentObject var engine: SpottiEngine
-    @EnvironmentObject var router: Router
+    @EnvironmentObject private var engine: SpottiEngine
+    @EnvironmentObject private var router: Router
+    @EnvironmentObject private var theme: ThemeEngine
 
     @State private var searchText = ""
     @State private var debounceTask: Task<Void, Never>?
@@ -11,6 +12,7 @@ struct SearchView: View {
     var body: some View {
         VStack(spacing: 0) {
             searchBar
+                .padding(.top, 12)
 
             if let results = engine.searchResults, !searchText.isEmpty {
                 ScrollView {
@@ -64,14 +66,16 @@ struct SearchView: View {
                 ContentUnavailableView.search(text: searchText)
             }
         }
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var searchBar: some View {
-        HStack {
+        HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("What do you want to listen to?", text: $searchText)
+            TextField("Search songs, artists, albums...", text: $searchText)
                 .textFieldStyle(.plain)
+                .font(.body)
                 .onChange(of: searchText) { _, newValue in
                     debounceTask?.cancel()
                     debounceTask = Task {
@@ -85,19 +89,24 @@ struct SearchView: View {
                     }
                 }
             if !searchText.isEmpty {
-                Button(action: {
+                Button {
                     searchText = ""
                     engine.searchResults = nil
-                }) {
+                } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(10)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .padding()
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .glassEffect(
+            .regular.tint(theme.accentColor).interactive(),
+            in: .capsule
+        )
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
     }
 
     @ViewBuilder

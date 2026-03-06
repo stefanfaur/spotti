@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct LibraryView: View {
-    @EnvironmentObject var engine: SpottiEngine
-    @EnvironmentObject var router: Router
+    @EnvironmentObject private var engine: SpottiEngine
+    @EnvironmentObject private var router: Router
+    @EnvironmentObject private var theme: ThemeEngine
 
     @State private var selectedTab = 0
 
@@ -10,24 +11,13 @@ struct LibraryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 16) {
-                ForEach(Array(tabs.enumerated()), id: \.offset) { index, title in
-                    Button(action: { selectedTab = index }) {
-                        Text(title)
-                            .font(.subheadline)
-                            .fontWeight(selectedTab == index ? .semibold : .regular)
-                            .padding(.vertical, 6)
-                            .padding(.horizontal, 12)
-                            .background(
-                                selectedTab == index
-                                    ? Color.accentColor.opacity(0.15)
-                                    : Color.clear,
-                                in: Capsule()
-                            )
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    ForEach(Array(tabs.enumerated()), id: \.offset) { index, title in
+                        tabButton(index: index, label: title)
                     }
-                    .buttonStyle(.plain)
+                    Spacer()
                 }
-                Spacer()
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
@@ -49,6 +39,24 @@ struct LibraryView: View {
         }
     }
 
+    private func tabButton(index: Int, label: String) -> some View {
+        Button { selectedTab = index } label: {
+            Text(label)
+                .font(.subheadline)
+                .fontWeight(selectedTab == index ? .semibold : .regular)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .glassEffect(
+                    selectedTab == index
+                        ? .regular.tint(theme.accentColor).interactive()
+                        : .regular.interactive(),
+                    in: .capsule
+                )
+        }
+        .buttonStyle(.plain)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: selectedTab)
+    }
+
     private var playlistsTab: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 4) {
@@ -57,6 +65,7 @@ struct LibraryView: View {
                         PlaylistRow(playlist: playlist) {
                             router.navigate(to: .playlistDetail(id: playlist.id))
                         }
+                        .hoverHighlight()
                         .padding(.horizontal)
                     }
                 }
@@ -73,6 +82,7 @@ struct LibraryView: View {
                         AlbumCard(album: album) {
                             router.navigate(to: .albumDetail(id: album.id))
                         }
+                        .hoverScale()
                     }
                 }
             }
@@ -88,6 +98,7 @@ struct LibraryView: View {
                         ArtistCard(artist: artist) {
                             router.navigate(to: .artistDetail(id: artist.id))
                         }
+                        .hoverScale()
                     }
                 }
             }
@@ -125,7 +136,7 @@ struct AlbumCard: View {
                     RoundedRectangle(cornerRadius: 8).fill(.quaternary)
                 }
                 .frame(minHeight: 140)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .clipShape(.rect(cornerRadius: 8))
 
                 Text(album.name)
                     .font(.callout.bold())

@@ -1,21 +1,28 @@
 import SwiftUI
 
 struct MainContentView: View {
-    @EnvironmentObject var router: Router
-    @EnvironmentObject var engine: SpottiEngine
+    @EnvironmentObject private var router: Router
+    @EnvironmentObject private var engine: SpottiEngine
 
     var body: some View {
         VStack(spacing: 0) {
             if router.canGoBack {
                 HStack {
-                    Button(action: { router.goBack() }) {
+                    Button {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            router.goBack()
+                        }
+                    } label: {
                         Image(systemName: "chevron.left")
+                            .font(.body)
+                            .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .padding(.leading, 8)
+                    .padding(.vertical, 4)
+
                     Spacer()
                 }
-                .padding(.vertical, 4)
             }
 
             Group {
@@ -35,6 +42,8 @@ struct MainContentView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .transition(.opacity.combined(with: .offset(y: 8)))
+            .animation(.spring(response: 0.35, dampingFraction: 0.9), value: router.destination)
         }
     }
 }

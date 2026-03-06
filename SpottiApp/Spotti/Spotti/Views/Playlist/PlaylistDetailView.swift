@@ -2,7 +2,8 @@ import SwiftUI
 
 struct PlaylistDetailView: View {
     let playlistId: String
-    @EnvironmentObject var engine: SpottiEngine
+    @EnvironmentObject private var engine: SpottiEngine
+    @EnvironmentObject private var theme: ThemeEngine
 
     var body: some View {
         ScrollView {
@@ -31,7 +32,7 @@ struct PlaylistDetailView: View {
                 RoundedRectangle(cornerRadius: 8).fill(.quaternary)
             }
             .frame(width: 200, height: 200)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .clipShape(.rect(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Playlist")
@@ -53,18 +54,27 @@ struct PlaylistDetailView: View {
                     Button(action: { playAll(playlist) }) {
                         Label("Play", systemImage: "play.fill")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.glassProminent)
 
                     Button(action: { shufflePlay(playlist) }) {
                         Label("Shuffle", systemImage: "shuffle")
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.glass)
                 }
                 .padding(.top, 4)
             }
             Spacer()
         }
         .padding()
+        .background(alignment: .top) {
+            LinearGradient(
+                colors: [theme.dominantColor.opacity(0.25), .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 300)
+            .ignoresSafeArea()
+        }
     }
 
     @ViewBuilder
@@ -101,6 +111,7 @@ struct PlaylistDetailView: View {
                 .onTapGesture {
                     playFromIndex(playlist, index: index)
                 }
+                .hoverHighlight()
             }
         }
     }

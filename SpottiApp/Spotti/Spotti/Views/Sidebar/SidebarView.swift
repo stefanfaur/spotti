@@ -1,100 +1,58 @@
 import SwiftUI
 
 struct SidebarView: View {
-    @EnvironmentObject var router: Router
-    @EnvironmentObject var engine: SpottiEngine
-
-    private var selectedNavItem: SidebarNavItem? {
-        switch router.destination {
-        case .home: return .home
-        case .search: return .search
-        case .library: return .library
-        default: return nil
-        }
-    }
-
-    enum SidebarNavItem: String, CaseIterable {
-        case home = "Home"
-        case search = "Search"
-        case library = "Library"
-    }
+    @EnvironmentObject private var engine: SpottiEngine
+    @EnvironmentObject private var theme: ThemeEngine
+    @EnvironmentObject private var router: Router
+    @Namespace private var sidebarNamespace
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(SidebarNavItem.allCases, id: \.self) { item in
-                Button {
-                    switch item {
-                    case .home: router.navigate(to: .home)
-                    case .search: router.navigate(to: .search)
-                    case .library: router.navigate(to: .library)
+            GlassEffectContainer(spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(SidebarNavItem.allCases) { item in
+                        sidebarButton(for: item)
                     }
-                } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: iconName(for: item))
-                            .frame(width: 20)
-                        Text(item.rawValue)
-                            .fontWeight(selectedNavItem == item ? .semibold : .regular)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        selectedNavItem == item
-                            ? Color.accentColor.opacity(0.15)
-                            : Color.clear
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 12)
 
             Divider()
+                .padding(.horizontal, 16)
                 .padding(.vertical, 8)
 
             Text("YOUR PLAYLISTS")
-                .font(.caption)
+                .font(.caption2)
+                .fontWeight(.semibold)
                 .foregroundStyle(.secondary)
+                .textCase(.uppercase)
                 .padding(.horizontal, 16)
+                .padding(.bottom, 4)
 
             if let library = engine.libraryContent {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
                         ForEach(library.playlists) { playlist in
-                            Button(action: {
-                                router.navigate(to: .playlistDetail(id: playlist.id))
-                            }) {
-                                HStack(spacing: 8) {
-                                    AsyncImage(url: URL(string: playlist.imageUrl ?? "")) { image in
-                                        image.resizable().aspectRatio(contentMode: .fill)
-                                    } placeholder: {
-                                        RoundedRectangle(cornerRadius: 4).fill(.quaternary)
-                                    }
-                                    .frame(width: 28, height: 28)
-                                    .clipShape(RoundedRectangle(cornerRadius: 4))
-
-                                    Text(playlist.name)
-                                        .font(.callout)
-                                        .lineLimit(1)
-                                }
-                                .padding(.vertical, 4)
-                                .padding(.horizontal, 8)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
+                            playlistRow(playlist)
                         }
                     }
+                    .padding(.horizontal, 12)
                 }
             } else {
                 Text("Loading playlists...")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
                     .padding(.horizontal, 16)
             }
 
             Spacer()
         }
         .padding(.top, 48)
+        .frame(width: 240)
+        .glassEffect(
+            .regular.tint(theme.sidebarTint),
+            in: .rect(cornerRadius: 0)
+        )
         .onAppear {
             if engine.libraryContent == nil {
                 engine.fetchLibrary()
@@ -102,11 +60,104 @@ struct SidebarView: View {
         }
     }
 
-    private func iconName(for item: SidebarNavItem) -> String {
-        switch item {
+    @ViewBuilder
+    private func sidebarButton(for item: SidebarNavItem) -> some View {
+        let isSelected = isItemSelected(item)
+
+        Button {
+            router.navigate(to: item.destination)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: item.icon)
+                    .font(.body)
+                    .frame(width: 20)
+                Text(item.title)
+                    .font(.body)
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected ? theme.accentColor.opacity(0.25) : .clear)
+                .glassEffect(
+                    isSelected
+                        ? .regular.tint(theme.accentColor).interactive()
+                        : .regular.interactive(),
+                    in: .rect(cornerRadius: 8)
+                )
+        }
+        .fontWeight(isSelected ? .semibold : .regular)
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isSelected)
+    }
+
+    @ViewBuilder
+    private func playlistRow(_ playlist: PlaylistSummary) -> some View {
+        Button {
+            router.navigate(to: .playlistDetail(id: playlist.id))
+        } label: {
+            HStack(spacing: 10) {
+                AsyncImage(url: playlist.imageUrl.flatMap(URL.init)) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(.quaternary)
+                }
+                .frame(width: 28, height: 28)
+                .clipShape(.rect(cornerRadius: 4))
+
+                Text(playlist.name)
+                    .font(.callout)
+                    .lineLimit(1)
+
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func isItemSelected(_ item: SidebarNavItem) -> Bool {
+        switch (item, router.destination) {
+        case (.home, .home): true
+        case (.search, .search): true
+        case (.library, .library): true
+        default: false
+        }
+    }
+}
+
+private enum SidebarNavItem: String, CaseIterable, Identifiable {
+    case home, search, library
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .home: "Home"
+        case .search: "Search"
+        case .library: "Library"
+        }
+    }
+
+    var icon: String {
+        switch self {
         case .home: "house"
         case .search: "magnifyingglass"
         case .library: "books.vertical"
+        }
+    }
+
+    var destination: NavigationDestination {
+        switch self {
+        case .home: .home
+        case .search: .search
+        case .library: .library
         }
     }
 }

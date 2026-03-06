@@ -2,8 +2,9 @@ import SwiftUI
 
 struct ArtistDetailView: View {
     let artistId: String
-    @EnvironmentObject var engine: SpottiEngine
-    @EnvironmentObject var router: Router
+    @EnvironmentObject private var engine: SpottiEngine
+    @EnvironmentObject private var router: Router
+    @EnvironmentObject private var theme: ThemeEngine
 
     var body: some View {
         ScrollView {
@@ -47,6 +48,15 @@ struct ArtistDetailView: View {
             Spacer()
         }
         .padding()
+        .background(alignment: .top) {
+            LinearGradient(
+                colors: [theme.dominantColor.opacity(0.25), .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 300)
+            .ignoresSafeArea()
+        }
     }
 
     @ViewBuilder
@@ -61,6 +71,7 @@ struct ArtistDetailView: View {
                     AlbumCard(album: album) {
                         router.navigate(to: .albumDetail(id: album.id))
                     }
+                    .hoverScale()
                 }
             }
             .padding(.horizontal)

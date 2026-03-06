@@ -237,6 +237,9 @@ class SpottiEngine: ObservableObject {
                 positionMs = pos
             }
             decodeTrack(from: dict["track"])
+            if let track = currentTrack {
+                ThemeEngine.shared.updateColors(for: track)
+            }
             isLoading = false
             startPositionTimer()
 
@@ -252,9 +255,13 @@ class SpottiEngine: ObservableObject {
             currentTrack = nil
             positionMs = 0
             stopPositionTimer()
+            ThemeEngine.shared.resetColors()
 
         case "TrackChanged":
             decodeTrack(from: dict["track"])
+            if let track = currentTrack {
+                ThemeEngine.shared.updateColors(for: track)
+            }
             isLoading = false
 
         case "Loading":

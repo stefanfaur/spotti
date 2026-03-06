@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct HomeView: View {
-    @EnvironmentObject var engine: SpottiEngine
-    @EnvironmentObject var router: Router
+    @EnvironmentObject private var engine: SpottiEngine
+    @EnvironmentObject private var router: Router
 
     private var greeting: String {
         let hour = Calendar.current.component(.hour, from: Date())
@@ -39,7 +39,7 @@ struct HomeView: View {
                         ScrollView(.horizontal, showsIndicators: false) {
                             LazyHStack(spacing: 16) {
                                 ForEach(library.savedAlbums.prefix(10)) { album in
-                                    AlbumCard(album: album) {
+                                    HomeAlbumCard(album: album) {
                                         router.navigate(to: .albumDetail(id: album.id))
                                     }
                                     .frame(width: 160)
@@ -70,21 +70,45 @@ struct HomeView: View {
 struct PlaylistCard: View {
     let playlist: PlaylistSummary
     let action: () -> Void
+    @EnvironmentObject private var theme: ThemeEngine
+    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
-                AsyncImage(url: URL(string: playlist.imageUrl ?? "")) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                ZStack(alignment: .bottomTrailing) {
+                    AsyncImage(url: playlist.imageUrl.flatMap(URL.init)) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                    }
+                    .frame(width: 160, height: 160)
+                    .clipShape(.rect(cornerRadius: 8))
+                    .rotation3DEffect(
+                        .degrees(isHovered ? 3 : 0),
+                        axis: (x: 0, y: 1, z: 0),
+                        perspective: 0.5
+                    )
+
+                    if isHovered {
+                        Image(systemName: "play.fill")
+                            .font(.title3)
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .glassEffect(
+                                .regular.tint(theme.accentColor).interactive(),
+                                in: .circle
+                            )
+                            .padding(8)
+                            .transition(.scale.combined(with: .opacity))
+                    }
                 }
-                .frame(width: 160, height: 160)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
 
                 Text(playlist.name)
-                    .font(.callout.bold())
+                    .font(.callout)
+                    .fontWeight(.semibold)
                     .lineLimit(2)
+
                 Text(playlist.owner)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -93,5 +117,64 @@ struct PlaylistCard: View {
             .frame(width: 160)
         }
         .buttonStyle(.plain)
+        .scaleEffect(isHovered ? 1.03 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .onHover { isHovered = $0 }
+    }
+}
+
+private struct HomeAlbumCard: View {
+    let album: AlbumSummary
+    let action: () -> Void
+    @EnvironmentObject private var theme: ThemeEngine
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 6) {
+                ZStack(alignment: .bottomTrailing) {
+                    AsyncImage(url: URL(string: album.imageUrl ?? "")) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        RoundedRectangle(cornerRadius: 8).fill(.quaternary)
+                    }
+                    .frame(width: 160, height: 160)
+                    .clipShape(.rect(cornerRadius: 8))
+                    .rotation3DEffect(
+                        .degrees(isHovered ? 3 : 0),
+                        axis: (x: 0, y: 1, z: 0),
+                        perspective: 0.5
+                    )
+
+                    if isHovered {
+                        Image(systemName: "play.fill")
+                            .font(.title3)
+                            .foregroundStyle(.white)
+                            .frame(width: 40, height: 40)
+                            .glassEffect(
+                                .regular.tint(theme.accentColor).interactive(),
+                                in: .circle
+                            )
+                            .padding(8)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
+
+                Text(album.name)
+                    .font(.callout)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+
+                Text(album.artist)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(width: 160)
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isHovered ? 1.03 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .onHover { isHovered = $0 }
     }
 }

@@ -3,23 +3,31 @@ import SwiftUI
 struct TrackRow: View {
     let track: TrackSummary
     let action: () -> Void
+    @EnvironmentObject private var engine: SpottiEngine
+    @EnvironmentObject private var theme: ThemeEngine
+    @State private var isHovered = false
+
+    private var isCurrentTrack: Bool {
+        engine.currentTrack?.id == track.id
+    }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                AsyncImage(url: URL(string: track.imageUrl ?? "")) { image in
+                AsyncImage(url: track.imageUrl.flatMap(URL.init)) { image in
                     image.resizable().aspectRatio(contentMode: .fill)
                 } placeholder: {
                     RoundedRectangle(cornerRadius: 4)
                         .fill(.quaternary)
                 }
                 .frame(width: 40, height: 40)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(.rect(cornerRadius: 4))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.name)
                         .font(.body)
-                        .lineLimit(1)
+                        .foregroundStyle(isCurrentTrack ? theme.accentColor : .primary)
+                        .fontWeight(isCurrentTrack ? .semibold : .regular)
                     Text(track.artist)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -28,14 +36,29 @@ struct TrackRow: View {
 
                 Spacer()
 
+                if isCurrentTrack && engine.isPlaying {
+                    EqualizerBars(color: theme.accentColor)
+                        .frame(width: 16, height: 12)
+                }
+
                 Text(formatDuration(track.durationMs))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background {
+            if isHovered {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(.quaternary.opacity(0.5))
+            }
+        }
+        .animation(.easeOut(duration: 0.15), value: isHovered)
+        .onHover { isHovered = $0 }
     }
 }
 
@@ -61,6 +84,7 @@ struct ArtistRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .hoverHighlight()
     }
 }
 
@@ -77,7 +101,7 @@ struct AlbumRow: View {
                     RoundedRectangle(cornerRadius: 4).fill(.quaternary)
                 }
                 .frame(width: 40, height: 40)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(.rect(cornerRadius: 4))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(album.name)
@@ -93,6 +117,7 @@ struct AlbumRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .hoverHighlight()
     }
 }
 
@@ -109,7 +134,7 @@ struct PlaylistRow: View {
                     RoundedRectangle(cornerRadius: 4).fill(.quaternary)
                 }
                 .frame(width: 40, height: 40)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+                .clipShape(.rect(cornerRadius: 4))
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(playlist.name)
@@ -124,6 +149,7 @@ struct PlaylistRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .hoverHighlight()
     }
 }
 
