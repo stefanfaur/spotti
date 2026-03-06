@@ -20,10 +20,7 @@ struct PlayerBarView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .frame(height: 80)
-        .glassEffect(
-            .regular.tint(theme.playerBarTint),
-            in: .rect(cornerRadius: 0)
-        )
+        .background(.ultraThinMaterial)
     }
 
     // MARK: - Track Info
@@ -55,10 +52,6 @@ struct PlayerBarView: View {
                 }
                 .frame(width: 56, height: 56)
                 .clipShape(.rect(cornerRadius: 8))
-                .glassEffect(
-                    .regular.tint(theme.dominantColor),
-                    in: .rect(cornerRadius: 8)
-                )
                 .shadow(color: theme.dominantColor.opacity(0.4), radius: 12, y: 3)
             }
             .buttonStyle(.plain)
@@ -92,7 +85,6 @@ struct PlayerBarView: View {
     @ViewBuilder
     private var playbackControls: some View {
         VStack(spacing: 6) {
-            GlassEffectContainer(spacing: 6) {
                 HStack(spacing: 16) {
                     Button { engine.toggleShuffle() } label: {
                         Image(systemName: "shuffle")
@@ -148,7 +140,6 @@ struct PlayerBarView: View {
                     .scaleEffect(engine.repeatMode > 0 ? 1.1 : 1.0)
                     .animation(.spring(response: 0.25, dampingFraction: 0.6), value: engine.repeatMode)
                 }
-            }
 
             if let track = engine.currentTrack {
                 seekBar(duration: track.durationMs)
@@ -233,7 +224,6 @@ struct PlayerBarView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .glassEffect(.regular, in: .capsule)
         .frame(width: 160, alignment: .trailing)
     }
 

@@ -8,11 +8,9 @@ struct SidebarView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            GlassEffectContainer(spacing: 4) {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(SidebarNavItem.allCases) { item in
-                        sidebarButton(for: item)
-                    }
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(SidebarNavItem.allCases) { item in
+                    sidebarButton(for: item)
                 }
             }
             .padding(.horizontal, 12)
@@ -49,10 +47,7 @@ struct SidebarView: View {
         }
         .padding(.top, 48)
         .frame(width: 240)
-        .glassEffect(
-            .regular.tint(theme.sidebarTint),
-            in: .rect(cornerRadius: 0)
-        )
+        .background(.ultraThinMaterial)
         .onAppear {
             if engine.libraryContent == nil {
                 engine.fetchLibrary()
@@ -83,12 +78,6 @@ struct SidebarView: View {
         .background {
             RoundedRectangle(cornerRadius: 8)
                 .fill(isSelected ? theme.accentColor.opacity(0.25) : .clear)
-                .glassEffect(
-                    isSelected
-                        ? .regular.tint(theme.accentColor).interactive()
-                        : .regular.interactive(),
-                    in: .rect(cornerRadius: 8)
-                )
         }
         .fontWeight(isSelected ? .semibold : .regular)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isSelected)

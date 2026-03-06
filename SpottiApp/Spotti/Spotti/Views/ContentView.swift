@@ -24,10 +24,7 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                 }
                 .padding(8)
-                .glassEffect(
-                    .regular.tint(.red),
-                    in: .rect(cornerRadius: 8)
-                )
+                .background(.red.opacity(0.15), in: .rect(cornerRadius: 8))
                 .padding(.horizontal, 8)
                 .padding(.top, 4)
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -77,10 +74,6 @@ struct LoginView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .glassEffect(
-            .regular.tint(theme.dominantColor),
-            in: .rect(cornerRadius: 0)
-        )
     }
 }
 
