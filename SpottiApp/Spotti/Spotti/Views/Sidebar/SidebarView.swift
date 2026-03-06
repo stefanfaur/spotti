@@ -75,8 +75,14 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .background {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? theme.accentColor.opacity(0.25) : .clear)
+            if isSelected {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(theme.accentColor.opacity(0.25))
+                    .glassEffect(
+                        .regular.tint(theme.accentColor),
+                        in: .rect(cornerRadius: 8)
+                    )
+            }
         }
         .fontWeight(isSelected ? .semibold : .regular)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isSelected)

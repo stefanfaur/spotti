@@ -85,59 +85,52 @@ struct PlayerBarView: View {
     @ViewBuilder
     private var playbackControls: some View {
         VStack(spacing: 6) {
-            GlassEffectContainer(spacing: 12) {
-                HStack(spacing: 16) {
+            GlassEffectContainer(spacing: 16) {
+                HStack(spacing: 12) {
                     Button { engine.toggleShuffle() } label: {
                         Image(systemName: "shuffle")
                             .font(.caption)
                             .foregroundStyle(engine.shuffleEnabled ? theme.accentColor : .primary)
                             .frame(width: 32, height: 32)
-                            .contentShape(Circle())
-                            .glassEffect(.regular, in: .circle)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
 
                     Button { engine.previous() } label: {
                         Image(systemName: "backward.fill")
                             .font(.title3)
-                            .frame(width: 36, height: 36)
-                            .contentShape(Circle())
-                            .glassEffect(.regular, in: .circle)
+                            .frame(width: 40, height: 40)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
 
                     Button { engine.togglePlayPause() } label: {
                         Image(systemName: engine.isPlaying ? "pause.fill" : "play.fill")
                             .font(.title2)
-                            .foregroundStyle(.white)
                             .frame(width: 48, height: 48)
-                            .contentShape(Circle())
                             .contentTransition(.symbolEffect(.replace.byLayer.downUp))
-                            .glassEffect(
-                                .regular.tint(theme.accentColor),
-                                in: .circle
-                            )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.glassProminent)
+                    .tint(theme.accentColor)
+                    .buttonBorderShape(.circle)
+                    .clipShape(Circle())
 
                     Button { engine.next() } label: {
                         Image(systemName: "forward.fill")
                             .font(.title3)
-                            .frame(width: 36, height: 36)
-                            .contentShape(Circle())
-                            .glassEffect(.regular, in: .circle)
+                            .frame(width: 40, height: 40)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
 
                     Button { engine.cycleRepeat() } label: {
                         Image(systemName: engine.repeatMode == 2 ? "repeat.1" : "repeat")
                             .font(.caption)
                             .foregroundStyle(engine.repeatMode > 0 ? theme.accentColor : .primary)
                             .frame(width: 32, height: 32)
-                            .contentShape(Circle())
-                            .glassEffect(.regular, in: .circle)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.glass)
+                    .buttonBorderShape(.circle)
                 }
             }
 
@@ -232,9 +225,9 @@ struct PlayerBarView: View {
                     .font(.caption)
                     .foregroundStyle(engine.activeDeviceId != nil ? theme.accentColor : .secondary)
                     .frame(width: 28, height: 28)
-                    .glassEffect(.regular, in: .circle)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.glass)
+            .buttonBorderShape(.circle)
             .popover(isPresented: $showDevicePicker) {
                 DevicePickerView()
                     .environmentObject(engine)

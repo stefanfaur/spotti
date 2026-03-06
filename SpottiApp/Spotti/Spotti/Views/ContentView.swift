@@ -84,16 +84,29 @@ struct MainLayout: View {
 
     var body: some View {
         ZStack {
-            // Ambient gradient — gives glass something colorful to blur
-            LinearGradient(
-                colors: [
-                    theme.dominantColor.opacity(0.35),
-                    theme.accentColor.opacity(0.15),
-                    Color.clear
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+            // Multi-layer ambient background — gives glass rich content to refract and reflect
+            ZStack {
+                LinearGradient(
+                    colors: [
+                        theme.dominantColor.opacity(0.45),
+                        theme.accentColor.opacity(0.25),
+                        theme.dominantColor.opacity(0.15)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+
+                // Secondary radial glow for more depth in the refraction
+                RadialGradient(
+                    colors: [
+                        theme.accentColor.opacity(0.3),
+                        .clear
+                    ],
+                    center: .bottomTrailing,
+                    startRadius: 50,
+                    endRadius: 400
+                )
+            }
             .ignoresSafeArea()
 
             VStack(spacing: 8) {
@@ -111,15 +124,13 @@ struct MainLayout: View {
                         .clipShape(.rect(cornerRadius: 16))
                 }
 
-                GlassEffectContainer(spacing: 16) {
-                    PlayerBarView(showNowPlaying: $showNowPlaying)
-                        .frame(height: 80)
-                        .clipShape(.rect(cornerRadius: 16))
-                        .glassEffect(
-                            .regular.tint(theme.dominantColor.opacity(0.2)),
-                            in: .rect(cornerRadius: 16)
-                        )
-                }
+                PlayerBarView(showNowPlaying: $showNowPlaying)
+                    .frame(height: 80)
+                    .clipShape(.rect(cornerRadius: 16))
+                    .glassEffect(
+                        .regular.tint(theme.dominantColor.opacity(0.2)),
+                        in: .rect(cornerRadius: 16)
+                    )
             }
             .padding(8)
 
