@@ -38,7 +38,7 @@ struct ContentView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
-        .background(VisualEffectBackground(material: theme.windowBlurMaterial))
+        .background(VisualEffectBackground(material: theme.blurLevel.material))
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.isAuthenticated)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: engine.lastError != nil)
     }

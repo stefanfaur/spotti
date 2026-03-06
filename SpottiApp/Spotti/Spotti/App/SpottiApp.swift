@@ -49,6 +49,11 @@ struct SpottiApp: App {
         .defaultPosition(.topTrailing)
         .windowLevel(.floating)
 
+        Settings {
+            SettingsView()
+                .environmentObject(theme)
+        }
+
         MenuBarExtra {
             MenuBarPlayerView()
                 .environmentObject(engine)

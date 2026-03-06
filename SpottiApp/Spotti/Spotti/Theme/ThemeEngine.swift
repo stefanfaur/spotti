@@ -23,9 +23,18 @@ class ThemeEngine: ObservableObject {
     @Published var glassTintOpacity: Double = 0.15
     @Published var colorTransitionDuration: Double = 0.6
 
-    /// Controls the behind-window blur intensity.
-    /// Options: .hudWindow (subtle), .fullScreenUI (medium), .sheet (heavy), .sidebar, .popover
-    @Published var windowBlurMaterial: NSVisualEffectView.Material = .hudWindow
+    /// Controls the behind-window blur intensity. Change via Settings (⌘,).
+    @Published var blurLevel: BlurLevel = .subtle
+
+    /// When false, colors stay at defaults and don't update from album art.
+    @Published var adaptiveColorEnabled: Bool = true {
+        didSet {
+            if !adaptiveColorEnabled {
+                lastExtractedTrackId = nil
+                applyColors(.default)
+            }
+        }
+    }
 
     private var currentColors: ExtractedColors = .default
     private var lastExtractedTrackId: String?
@@ -33,6 +42,7 @@ class ThemeEngine: ObservableObject {
     private init() {}
 
     func updateColors(for track: SpottiTrackInfo) {
+        guard adaptiveColorEnabled else { return }
         guard track.id != lastExtractedTrackId else { return }
         lastExtractedTrackId = track.id
 
