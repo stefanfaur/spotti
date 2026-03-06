@@ -38,6 +38,7 @@ struct ContentView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
+        .background(VisualEffectBackground(material: theme.windowBlurMaterial))
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.isAuthenticated)
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: engine.lastError != nil)
     }
@@ -83,20 +84,41 @@ struct MainLayout: View {
 
     var body: some View {
         ZStack {
+            // Ambient gradient — gives glass something colorful to blur
+            LinearGradient(
+                colors: [
+                    theme.dominantColor.opacity(0.35),
+                    theme.accentColor.opacity(0.15),
+                    Color.clear
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
                     SidebarView()
                         .frame(width: 240)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                        .clipShape(.rect(cornerRadius: 16))
+                        .glassEffect(
+                            .regular.tint(theme.dominantColor.opacity(0.25)),
+                            in: .rect(cornerRadius: 16)
+                        )
 
                     MainContentView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipShape(.rect(cornerRadius: 16))
                 }
 
                 GlassEffectContainer(spacing: 16) {
                     PlayerBarView(showNowPlaying: $showNowPlaying)
                         .frame(height: 80)
-                        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                        .clipShape(.rect(cornerRadius: 16))
+                        .glassEffect(
+                            .regular.tint(theme.dominantColor.opacity(0.2)),
+                            in: .rect(cornerRadius: 16)
+                        )
                 }
             }
             .padding(8)

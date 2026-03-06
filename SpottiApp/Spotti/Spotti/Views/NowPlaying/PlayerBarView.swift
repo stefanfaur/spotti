@@ -8,6 +8,7 @@ struct PlayerBarView: View {
     @Binding var showNowPlaying: Bool
 
     @State private var isSeekBarHovered = false
+    @State private var showDevicePicker = false
 
     var body: some View {
         HStack(spacing: 16) {
@@ -91,17 +92,17 @@ struct PlayerBarView: View {
                             .font(.caption)
                             .foregroundStyle(engine.shuffleEnabled ? theme.accentColor : .primary)
                             .frame(width: 32, height: 32)
-                            .glassEffect(.regular.interactive(), in: .circle)
+                            .contentShape(Circle())
+                            .glassEffect(.regular, in: .circle)
                     }
                     .buttonStyle(.plain)
-                    .scaleEffect(engine.shuffleEnabled ? 1.1 : 1.0)
-                    .animation(.spring(response: 0.25, dampingFraction: 0.6), value: engine.shuffleEnabled)
 
                     Button { engine.previous() } label: {
                         Image(systemName: "backward.fill")
                             .font(.title3)
                             .frame(width: 36, height: 36)
-                            .glassEffect(.regular.interactive(), in: .circle)
+                            .contentShape(Circle())
+                            .glassEffect(.regular, in: .circle)
                     }
                     .buttonStyle(.plain)
 
@@ -110,22 +111,21 @@ struct PlayerBarView: View {
                             .font(.title2)
                             .foregroundStyle(.white)
                             .frame(width: 48, height: 48)
+                            .contentShape(Circle())
                             .contentTransition(.symbolEffect(.replace.byLayer.downUp))
                             .glassEffect(
-                                .regular.tint(theme.accentColor).interactive(),
+                                .regular.tint(theme.accentColor),
                                 in: .circle
                             )
                     }
                     .buttonStyle(.plain)
-                    .scaleEffect(engine.isLoading ? 0.9 : 1.0)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: engine.isPlaying)
-                    .animation(.spring(response: 0.2, dampingFraction: 0.8), value: engine.isLoading)
 
                     Button { engine.next() } label: {
                         Image(systemName: "forward.fill")
                             .font(.title3)
                             .frame(width: 36, height: 36)
-                            .glassEffect(.regular.interactive(), in: .circle)
+                            .contentShape(Circle())
+                            .glassEffect(.regular, in: .circle)
                     }
                     .buttonStyle(.plain)
 
@@ -134,11 +134,10 @@ struct PlayerBarView: View {
                             .font(.caption)
                             .foregroundStyle(engine.repeatMode > 0 ? theme.accentColor : .primary)
                             .frame(width: 32, height: 32)
-                            .glassEffect(.regular.interactive(), in: .circle)
+                            .contentShape(Circle())
+                            .glassEffect(.regular, in: .circle)
                     }
                     .buttonStyle(.plain)
-                    .scaleEffect(engine.repeatMode > 0 ? 1.1 : 1.0)
-                    .animation(.spring(response: 0.25, dampingFraction: 0.6), value: engine.repeatMode)
                 }
             }
 
@@ -222,10 +221,29 @@ struct PlayerBarView: View {
             )
             .tint(theme.accentColor)
             .frame(width: 100)
+
+            Button {
+                showDevicePicker.toggle()
+                if showDevicePicker {
+                    engine.fetchDevices()
+                }
+            } label: {
+                Image(systemName: "hifispeaker.and.appletv")
+                    .font(.caption)
+                    .foregroundStyle(engine.activeDeviceId != nil ? theme.accentColor : .secondary)
+                    .frame(width: 28, height: 28)
+                    .glassEffect(.regular, in: .circle)
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showDevicePicker) {
+                DevicePickerView()
+                    .environmentObject(engine)
+                    .environmentObject(theme)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .frame(width: 160, alignment: .trailing)
+        .frame(width: 200, alignment: .trailing)
     }
 
     private var volumeIcon: String {

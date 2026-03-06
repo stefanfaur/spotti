@@ -54,4 +54,6 @@ pub enum PlayerEvent {
     AlbumDetail { detail_json: String },
     ArtistDetail { detail_json: String },
     ArtCached { id: String, path: String },
+    DeviceList { devices_json: String },
+    DeviceTransferred { device_id: String },
 }

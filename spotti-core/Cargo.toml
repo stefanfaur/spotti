@@ -35,6 +35,9 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 # Shuffle
 rand = "0.9"
 
+# System media controls (Now Playing / media keys)
+souvlaki = "0.8"
+
 # Error handling
 thiserror = "2"
 

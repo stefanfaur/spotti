@@ -5,6 +5,7 @@ use crossbeam_channel::bounded;
 use tokio::sync::mpsc;
 
 use crate::cache::art::ArtCache;
+use crate::media::now_playing::{spawn_now_playing_service, MediaControlAction};
 use crate::player::types::RepeatMode;
 use crate::player::{PlayerCommand, PlayerEvent, PlayerEngine};
 use crate::runtime::get_runtime;
@@ -121,9 +122,30 @@ pub extern "C" fn spotti_player_init(core: *mut SpottiCore) -> i32 {
 
     let callback = core.event_callback;
 
+    // Spawn Now Playing service (media keys + Now Playing widget)
+    let media_cmd_tx = cmd_tx.clone();
+    let now_playing_tx = match spawn_now_playing_service(move |action| {
+        let cmd = match action {
+            MediaControlAction::Play => PlayerCommand::Play,
+            MediaControlAction::Pause => PlayerCommand::Pause,
+            MediaControlAction::Toggle => PlayerCommand::Play,
+            MediaControlAction::Next => PlayerCommand::Next,
+            MediaControlAction::Previous => PlayerCommand::Previous,
+            MediaControlAction::Stop => PlayerCommand::Stop,
+            MediaControlAction::SeekTo(ms) => PlayerCommand::Seek(ms),
+        };
+        let _ = media_cmd_tx.blocking_send(cmd);
+    }) {
+        Ok(tx) => Some(tx),
+        Err(e) => {
+            log::warn!("Now Playing service unavailable: {e}");
+            None
+        }
+    };
+
     // Spawn the player engine on the tokio runtime
     get_runtime().spawn(async move {
-        match PlayerEngine::new(session, cmd_rx, event_tx) {
+        match PlayerEngine::new(session, cmd_rx, event_tx, now_playing_tx) {
             Ok(engine) => engine.run().await,
             Err(e) => log::error!("PlayerEngine failed to start: {}", e),
         }
@@ -419,6 +441,78 @@ pub unsafe extern "C" fn spotti_fetch_artist(
                             event_cb,
                             &PlayerEvent::Error {
                                 message: e.to_string(),
+                            },
+                        );
+                    }
+                }
+            });
+        }
+    }
+}
+
+// ── Devices (Spotify Connect) ──
+
+/// Fetch available Spotify Connect devices. Results arrive via DeviceList event.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_fetch_devices(core: *mut SpottiCore) {
+    let core = &*core;
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            let event_cb = core.event_callback;
+            get_runtime().spawn(async move {
+                match crate::spotify::devices::fetch_devices(&client).await {
+                    Ok(devices) => {
+                        if let Ok(json) = serde_json::to_string(&devices) {
+                            emit_event(
+                                event_cb,
+                                &PlayerEvent::DeviceList { devices_json: json },
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        emit_event(
+                            event_cb,
+                            &PlayerEvent::Error {
+                                message: format!("Device fetch failed: {e}"),
+                            },
+                        );
+                    }
+                }
+            });
+        }
+    }
+}
+
+/// Transfer playback to a specific device.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_transfer_playback(
+    core: *mut SpottiCore,
+    device_id: *const c_char,
+    start_playing: bool,
+) {
+    let core = &*core;
+    let device_id = CStr::from_ptr(device_id).to_string_lossy().to_string();
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            let event_cb = core.event_callback;
+            let did = device_id.clone();
+            get_runtime().spawn(async move {
+                match crate::spotify::devices::transfer_playback(&client, &did, start_playing)
+                    .await
+                {
+                    Ok(()) => {
+                        emit_event(
+                            event_cb,
+                            &PlayerEvent::DeviceTransferred { device_id: did },
+                        );
+                    }
+                    Err(e) => {
+                        emit_event(
+                            event_cb,
+                            &PlayerEvent::Error {
+                                message: format!("Device transfer failed: {e}"),
                             },
                         );
                     }

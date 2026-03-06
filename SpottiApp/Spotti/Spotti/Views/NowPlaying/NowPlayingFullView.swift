@@ -23,7 +23,8 @@ struct NowPlayingFullView: View {
                             .font(.title3)
                             .foregroundStyle(.white.opacity(0.8))
                             .frame(width: 40, height: 40)
-                            .glassEffect(.regular.interactive(), in: .circle)
+                            .contentShape(Circle())
+                            .glassEffect(.regular, in: .circle)
                     }
                     .buttonStyle(.plain)
                     .padding(.trailing, 24)
@@ -225,7 +226,8 @@ struct NowPlayingFullView: View {
                         .font(.title3)
                         .foregroundStyle(engine.shuffleEnabled ? theme.accentColor : .white.opacity(0.7))
                         .frame(width: 40, height: 40)
-                        .glassEffect(.regular.interactive(), in: .circle)
+                        .contentShape(Circle())
+                        .glassEffect(.regular, in: .circle)
                 }
                 .buttonStyle(.plain)
 
@@ -234,7 +236,8 @@ struct NowPlayingFullView: View {
                         .font(.title2)
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
-                        .glassEffect(.regular.interactive(), in: .circle)
+                        .contentShape(Circle())
+                        .glassEffect(.regular, in: .circle)
                 }
                 .buttonStyle(.plain)
 
@@ -243,22 +246,22 @@ struct NowPlayingFullView: View {
                         .font(.title)
                         .foregroundStyle(.white)
                         .frame(width: 64, height: 64)
+                        .contentShape(Circle())
                         .contentTransition(.symbolEffect(.replace.byLayer.downUp))
                         .glassEffect(
-                            .regular.tint(theme.accentColor).interactive(),
+                            .regular.tint(theme.accentColor),
                             in: .circle
                         )
                 }
                 .buttonStyle(.plain)
-                .scaleEffect(engine.isPlaying ? 1.0 : 0.95)
-                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: engine.isPlaying)
 
                 Button { engine.next() } label: {
                     Image(systemName: "forward.fill")
                         .font(.title2)
                         .foregroundStyle(.white)
                         .frame(width: 44, height: 44)
-                        .glassEffect(.regular.interactive(), in: .circle)
+                        .contentShape(Circle())
+                        .glassEffect(.regular, in: .circle)
                 }
                 .buttonStyle(.plain)
 
@@ -267,7 +270,8 @@ struct NowPlayingFullView: View {
                         .font(.title3)
                         .foregroundStyle(engine.repeatMode > 0 ? theme.accentColor : .white.opacity(0.7))
                         .frame(width: 40, height: 40)
-                        .glassEffect(.regular.interactive(), in: .circle)
+                        .contentShape(Circle())
+                        .glassEffect(.regular, in: .circle)
                 }
                 .buttonStyle(.plain)
             }

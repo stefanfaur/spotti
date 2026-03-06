@@ -45,9 +45,13 @@ class SpottiEngine: ObservableObject {
     @Published var volume: UInt32 = 100
     @Published var shuffleEnabled: Bool = false
     @Published var repeatMode: UInt32 = 0
+    @Published var availableDevices: [DeviceInfo] = []
+    @Published var activeDeviceId: String?
+    @Published var miniPlayerVisible = false
 
     private var corePtr: OpaquePointer?
     private var positionTimer: Timer?
+    private var lastNotifiedTrackId: String?
 
     private init() {}
 
@@ -83,6 +87,7 @@ class SpottiEngine: ObservableObject {
                 if result == 0 {
                     self?.isAuthenticated = true
                     spotti_player_init(core)
+                    NotificationService.shared.requestPermission()
                 }
             }
         }
@@ -180,6 +185,20 @@ class SpottiEngine: ObservableObject {
         }
     }
 
+    // MARK: - Devices (Spotify Connect)
+
+    func fetchDevices() {
+        guard let core = corePtr else { return }
+        spotti_fetch_devices(core)
+    }
+
+    func transferPlayback(to deviceId: String, startPlaying: Bool = true) {
+        guard let core = corePtr else { return }
+        deviceId.withCString { ptr in
+            spotti_transfer_playback(core, ptr, startPlaying)
+        }
+    }
+
     // MARK: - Volume, Shuffle, Repeat
 
     func setVolume(_ volume: UInt32) {
@@ -261,6 +280,15 @@ class SpottiEngine: ObservableObject {
             decodeTrack(from: dict["track"])
             if let track = currentTrack {
                 ThemeEngine.shared.updateColors(for: track)
+                if track.id != lastNotifiedTrackId {
+                    lastNotifiedTrackId = track.id
+                    NotificationService.shared.showTrackNotification(
+                        title: track.title,
+                        artist: track.artist,
+                        album: track.album,
+                        imageUrl: track.imageUrl
+                    )
+                }
             }
             isLoading = false
 
@@ -324,6 +352,18 @@ class SpottiEngine: ObservableObject {
             }
         case "ArtCached":
             break
+
+        case "DeviceList":
+            if let devicesJson = dict["devices_json"] as? String,
+               let data = devicesJson.data(using: .utf8) {
+                availableDevices = (try? JSONDecoder().decode([DeviceInfo].self, from: data)) ?? []
+                activeDeviceId = availableDevices.first(where: { $0.isActive })?.id
+            }
+        case "DeviceTransferred":
+            if let deviceId = dict["device_id"] as? String {
+                activeDeviceId = deviceId
+                fetchDevices()
+            }
 
         default:
             break

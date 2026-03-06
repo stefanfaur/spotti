@@ -3,6 +3,7 @@
 
 mod cache;
 mod ffi;
+mod media;
 mod player;
 mod runtime;
 mod spotify;

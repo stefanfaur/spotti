@@ -1,6 +1,8 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use std::sync::mpsc as std_mpsc;
+
 use crossbeam_channel::Sender;
 use librespot_core::Session;
 use librespot_core::SpotifyUri;
@@ -12,6 +14,7 @@ use librespot_playback::mixer::softmixer::SoftMixer;
 use librespot_playback::player::{Player, PlayerEvent as LibrespotEvent};
 use tokio::sync::mpsc;
 
+use crate::media::now_playing::NowPlayingCommand;
 use super::types::{PlayerCommand, PlayerEvent, RepeatMode, TrackInfo};
 
 pub struct PlayerEngine {
@@ -25,6 +28,7 @@ pub struct PlayerEngine {
     shuffle: bool,
     repeat: RepeatMode,
     original_queue: Vec<String>,
+    now_playing_tx: Option<std_mpsc::Sender<NowPlayingCommand>>,
 }
 
 impl PlayerEngine {
@@ -32,6 +36,7 @@ impl PlayerEngine {
         session: Session,
         cmd_rx: mpsc::Receiver<PlayerCommand>,
         event_tx: Sender<PlayerEvent>,
+        now_playing_tx: Option<std_mpsc::Sender<NowPlayingCommand>>,
     ) -> Result<Self, String> {
         let player_config = PlayerConfig {
             bitrate: Bitrate::Bitrate320,
@@ -67,7 +72,14 @@ impl PlayerEngine {
             shuffle: false,
             repeat: RepeatMode::Off,
             original_queue: Vec::new(),
+            now_playing_tx,
         })
+    }
+
+    fn update_now_playing(&self, cmd: NowPlayingCommand) {
+        if let Some(ref tx) = self.now_playing_tx {
+            let _ = tx.send(cmd);
+        }
     }
 
     /// Main run loop. Call this from a spawned tokio task.
@@ -193,6 +205,9 @@ impl PlayerEngine {
                         track: track.clone(),
                         position_ms,
                     });
+                    self.update_now_playing(NowPlayingCommand::SetPlaying {
+                        position_ms: position_ms as u32,
+                    });
                 }
             }
             LibrespotEvent::Paused { position_ms, .. } => {
@@ -201,15 +216,26 @@ impl PlayerEngine {
                         track: track.clone(),
                         position_ms,
                     });
+                    self.update_now_playing(NowPlayingCommand::SetPaused {
+                        position_ms: position_ms as u32,
+                    });
                 }
             }
             LibrespotEvent::Stopped { .. } => {
                 let _ = self.event_tx.send(PlayerEvent::Stopped);
+                self.update_now_playing(NowPlayingCommand::SetStopped);
             }
             LibrespotEvent::TrackChanged { audio_item } => {
                 let track_info = track_info_from_audio_item(&audio_item);
                 self.current_track = Some(track_info.clone());
-                let _ = self.event_tx.send(PlayerEvent::TrackChanged { track: track_info });
+                let _ = self.event_tx.send(PlayerEvent::TrackChanged { track: track_info.clone() });
+                self.update_now_playing(NowPlayingCommand::SetMetadata {
+                    title: track_info.title,
+                    artist: track_info.artist,
+                    album: track_info.album,
+                    cover_url: None, // souvlaki macOS needs file:// URLs; art cache integration later
+                    duration_ms: track_info.duration_ms,
+                });
             }
             LibrespotEvent::EndOfTrack { .. } => {
                 match self.repeat {
@@ -247,9 +273,15 @@ impl PlayerEngine {
             }
             LibrespotEvent::Seeked { position_ms, .. } => {
                 let _ = self.event_tx.send(PlayerEvent::PositionChanged { position_ms });
+                self.update_now_playing(NowPlayingCommand::UpdatePosition {
+                    position_ms: position_ms as u32,
+                });
             }
             LibrespotEvent::PositionChanged { position_ms, .. } => {
                 let _ = self.event_tx.send(PlayerEvent::PositionChanged { position_ms });
+                self.update_now_playing(NowPlayingCommand::UpdatePosition {
+                    position_ms: position_ms as u32,
+                });
             }
             _ => {}
         }

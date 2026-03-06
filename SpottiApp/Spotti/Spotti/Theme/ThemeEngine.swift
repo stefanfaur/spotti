@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 import Combine
 
 class ThemeEngine: ObservableObject {
@@ -22,6 +23,10 @@ class ThemeEngine: ObservableObject {
     @Published var glassTintOpacity: Double = 0.15
     @Published var colorTransitionDuration: Double = 0.6
 
+    /// Controls the behind-window blur intensity.
+    /// Options: .hudWindow (subtle), .fullScreenUI (medium), .sheet (heavy), .sidebar, .popover
+    @Published var windowBlurMaterial: NSVisualEffectView.Material = .hudWindow
+
     private var currentColors: ExtractedColors = .default
     private var lastExtractedTrackId: String?
 
@@ -37,18 +42,18 @@ class ThemeEngine: ObservableObject {
             return
         }
 
-        Task.detached(priority: .userInitiated) { [weak self] in
+        Task.detached(priority: .userInitiated) {
             guard let (data, _) = try? await URLSession.shared.data(from: url),
                   let nsImage = NSImage(data: data),
                   let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
             else {
-                await MainActor.run { self?.applyColors(.default) }
+                await MainActor.run { [weak self] in self?.applyColors(.default) }
                 return
             }
 
             let colors = ColorExtractor.extractColors(from: cgImage)
 
-            await MainActor.run {
+            await MainActor.run { [weak self] in
                 self?.applyColors(colors)
             }
         }
