@@ -29,6 +29,12 @@ serde_json = "1"
 keyring = "3"
 dirs = "6"
 
+# HTTP (album art download)
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
+# Shuffle
+rand = "0.9"
+
 # Error handling
 thiserror = "2"
 

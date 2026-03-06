@@ -7,19 +7,24 @@ use librespot_core::SpotifyUri;
 use librespot_metadata::audio::AudioItem;
 use librespot_playback::audio_backend;
 use librespot_playback::config::{AudioFormat, Bitrate, PlayerConfig};
-use librespot_playback::mixer::NoOpVolume;
+use librespot_playback::mixer::{Mixer, MixerConfig};
+use librespot_playback::mixer::softmixer::SoftMixer;
 use librespot_playback::player::{Player, PlayerEvent as LibrespotEvent};
 use tokio::sync::mpsc;
 
-use super::types::{PlayerCommand, PlayerEvent, TrackInfo};
+use super::types::{PlayerCommand, PlayerEvent, RepeatMode, TrackInfo};
 
 pub struct PlayerEngine {
     player: Arc<Player>,
+    mixer: Arc<SoftMixer>,
     cmd_rx: mpsc::Receiver<PlayerCommand>,
     event_tx: Sender<PlayerEvent>,
     queue: Vec<String>,
     queue_index: usize,
     current_track: Option<TrackInfo>,
+    shuffle: bool,
+    repeat: RepeatMode,
+    original_queue: Vec<String>,
 }
 
 impl PlayerEngine {
@@ -39,20 +44,29 @@ impl PlayerEngine {
             .ok_or("No audio backend found (rodio expected)")?;
         let audio_format = AudioFormat::default();
 
+        let mixer = SoftMixer::open(MixerConfig::default())
+            .map_err(|e| format!("Failed to create mixer: {}", e))?;
+        let mixer = Arc::new(mixer);
+        let volume_getter = mixer.get_soft_volume();
+
         let player = Player::new(
             player_config,
             session,
-            Box::new(NoOpVolume),
+            volume_getter,
             move || backend(None, audio_format),
         );
 
         Ok(Self {
             player,
+            mixer,
             cmd_rx,
             event_tx,
             queue: Vec::new(),
             queue_index: 0,
             current_track: None,
+            shuffle: false,
+            repeat: RepeatMode::Off,
+            original_queue: Vec::new(),
         })
     }
 
@@ -106,6 +120,47 @@ impl PlayerEngine {
                 self.queue_index = index;
                 self.load_current_track(true);
             }
+            PlayerCommand::SetVolume(volume) => {
+                self.mixer.set_volume(volume);
+                let _ = self.event_tx.send(PlayerEvent::VolumeChanged { volume });
+            }
+            PlayerCommand::SetShuffle(enabled) => {
+                self.shuffle = enabled;
+                if enabled {
+                    self.original_queue = self.queue.clone();
+                    let current_uri = self.queue.get(self.queue_index).cloned();
+                    let mut rest: Vec<String> = self
+                        .queue
+                        .iter()
+                        .enumerate()
+                        .filter(|(i, _)| *i != self.queue_index)
+                        .map(|(_, uri)| uri.clone())
+                        .collect();
+                    use rand::seq::SliceRandom;
+                    rest.shuffle(&mut rand::rng());
+                    self.queue = Vec::with_capacity(rest.len() + 1);
+                    if let Some(current) = current_uri {
+                        self.queue.push(current);
+                    }
+                    self.queue.extend(rest);
+                    self.queue_index = 0;
+                } else if !self.original_queue.is_empty() {
+                    let current_uri = self.queue.first().cloned();
+                    self.queue = self.original_queue.clone();
+                    if let Some(ref uri) = current_uri {
+                        self.queue_index = self
+                            .original_queue
+                            .iter()
+                            .position(|u| u == uri)
+                            .unwrap_or(0);
+                    }
+                }
+                let _ = self.event_tx.send(PlayerEvent::ShuffleChanged { enabled });
+            }
+            PlayerCommand::SetRepeat(mode) => {
+                self.repeat = mode;
+                let _ = self.event_tx.send(PlayerEvent::RepeatChanged { mode });
+            }
         }
     }
 
@@ -157,11 +212,25 @@ impl PlayerEngine {
                 let _ = self.event_tx.send(PlayerEvent::TrackChanged { track: track_info });
             }
             LibrespotEvent::EndOfTrack { .. } => {
-                if self.queue_index + 1 < self.queue.len() {
-                    self.queue_index += 1;
-                    self.load_current_track(true);
-                } else {
-                    let _ = self.event_tx.send(PlayerEvent::EndOfTrack);
+                match self.repeat {
+                    RepeatMode::Track => {
+                        self.load_current_track(true);
+                    }
+                    RepeatMode::Context => {
+                        self.queue_index += 1;
+                        if self.queue_index >= self.queue.len() {
+                            self.queue_index = 0;
+                        }
+                        self.load_current_track(true);
+                    }
+                    RepeatMode::Off => {
+                        if self.queue_index + 1 < self.queue.len() {
+                            self.queue_index += 1;
+                            self.load_current_track(true);
+                        } else {
+                            let _ = self.event_tx.send(PlayerEvent::EndOfTrack);
+                        }
+                    }
                 }
             }
             LibrespotEvent::TimeToPreloadNextTrack { .. } => {
@@ -208,11 +277,14 @@ fn track_info_from_audio_item(item: &AudioItem) -> TrackInfo {
         UniqueFields::Episode { show_name, .. } => (show_name.clone(), String::new()),
     };
 
+    let image_url = item.covers.first().map(|c| c.url.clone());
+
     TrackInfo {
         id: item.track_id.to_string(),
         title: item.name.clone(),
         artist,
         album,
         duration_ms: item.duration_ms,
+        image_url,
     }
 }

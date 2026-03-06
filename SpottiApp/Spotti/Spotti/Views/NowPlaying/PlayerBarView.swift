@@ -9,7 +9,7 @@ struct PlayerBarView: View {
             Spacer()
             playbackControls
             Spacer()
-            Color.clear.frame(width: 250) // Placeholder for volume/device (Phase 2+)
+            volumeSection
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -19,9 +19,14 @@ struct PlayerBarView: View {
 
     private var trackInfoSection: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.gray.opacity(0.3))
-                .frame(width: 56, height: 56)
+            AsyncImage(url: URL(string: engine.currentTrack?.imageUrl ?? "")) { image in
+                image.resizable().aspectRatio(contentMode: .fill)
+            } placeholder: {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.gray.opacity(0.3))
+            }
+            .frame(width: 56, height: 56)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
 
             if let track = engine.currentTrack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -46,6 +51,13 @@ struct PlayerBarView: View {
     private var playbackControls: some View {
         VStack(spacing: 4) {
             HStack(spacing: 24) {
+                Button { engine.toggleShuffle() } label: {
+                    Image(systemName: "shuffle")
+                        .font(.caption)
+                        .foregroundStyle(engine.shuffleEnabled ? Color.accentColor : Color.primary)
+                }
+                .buttonStyle(.plain)
+
                 Button { engine.previous() } label: {
                     Image(systemName: "backward.fill")
                         .font(.title3)
@@ -63,6 +75,13 @@ struct PlayerBarView: View {
                         .font(.title3)
                 }
                 .buttonStyle(.plain)
+
+                Button { engine.cycleRepeat() } label: {
+                    Image(systemName: engine.repeatMode == 2 ? "repeat.1" : "repeat")
+                        .font(.caption)
+                        .foregroundStyle(engine.repeatMode > 0 ? Color.accentColor : Color.primary)
+                }
+                .buttonStyle(.plain)
             }
 
             if let track = engine.currentTrack {
@@ -70,6 +89,30 @@ struct PlayerBarView: View {
             }
         }
         .frame(maxWidth: 400)
+    }
+
+    private var volumeSection: some View {
+        HStack(spacing: 8) {
+            Image(systemName: volumeIconName)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Slider(
+                value: Binding(
+                    get: { Double(engine.volume) },
+                    set: { engine.setVolume(UInt32($0)) }
+                ),
+                in: 0...100
+            )
+            .frame(width: 100)
+        }
+        .frame(width: 250, alignment: .trailing)
+    }
+
+    private var volumeIconName: String {
+        if engine.volume == 0 { return "speaker.slash.fill" }
+        if engine.volume < 33 { return "speaker.wave.1.fill" }
+        if engine.volume < 66 { return "speaker.wave.2.fill" }
+        return "speaker.wave.3.fill"
     }
 
     private func seekBar(duration: UInt32) -> some View {
