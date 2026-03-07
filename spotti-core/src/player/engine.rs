@@ -215,6 +215,21 @@ impl PlayerEngine {
             return;
         };
 
+        // Every load attempt increments the failure counter.
+        // It is reset to 0 on successful Playing/TrackChanged events.
+        self.consecutive_load_failures += 1;
+        if self.consecutive_load_failures > 3 {
+            log::error!(
+                "Session lost: {} consecutive load attempts without success",
+                self.consecutive_load_failures
+            );
+            let _ = self.event_tx.send(PlayerEvent::SessionLost {
+                message: "Multiple consecutive track load failures — session may have expired".to_string(),
+            });
+            self.is_playing = false;
+            return;
+        }
+
         let _ = self.event_tx.send(PlayerEvent::Loading {
             uri: uri_str.clone(),
         });
@@ -344,22 +359,9 @@ impl PlayerEngine {
                 // not a preloaded track that failed in the background.
                 let is_current = current_uri.ends_with(&failed_id);
                 if is_current {
-                    self.consecutive_load_failures += 1;
                     let _ = self.event_tx.send(PlayerEvent::Error {
                         message: format!("Track unavailable: {}", current_uri),
                     });
-
-                    if self.consecutive_load_failures >= 3 {
-                        log::error!(
-                            "Session lost: {} consecutive track load failures",
-                            self.consecutive_load_failures
-                        );
-                        let _ = self.event_tx.send(PlayerEvent::SessionLost {
-                            message: "Multiple consecutive track load failures — session may have expired".to_string(),
-                        });
-                        self.is_playing = false;
-                        return;
-                    }
                     self.advance_after_error();
                 } else {
                     log::info!("Ignoring unavailable preload for {}, current is {}", failed_id, current_uri);
@@ -377,7 +379,9 @@ impl PlayerEngine {
                     position_ms: position_ms as u32,
                 });
             }
-            _ => {}
+            other => {
+                log::debug!("Unhandled librespot event: {:?}", other);
+            }
         }
     }
 }
