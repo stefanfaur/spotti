@@ -84,18 +84,10 @@ struct TrackRow: View {
         .background {
             if isCurrentTrack {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(.white.opacity(0.06))
-                    .glassEffect(
-                        .regular.tint(theme.effectiveAccentColor.opacity(0.3)),
-                        in: .rect(cornerRadius: 8)
-                    )
+                    .fill(theme.effectiveAccentColor.opacity(0.15))
             } else if isHovered {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(.white.opacity(0.06))
-                    .glassEffect(
-                        .regular,
-                        in: .rect(cornerRadius: 6)
-                    )
+                    .fill(.white.opacity(0.08))
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCurrentTrack)
