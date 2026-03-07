@@ -420,6 +420,19 @@ class SpottiEngine: ObservableObject {
             isLoading = false
             if let msg = dict["message"] as? String {
                 lastError = msg
+                if msg.hasPrefix("Device transfer failed") {
+                    // Transfer target gone (e.g. Spotify closed) — reset to idle and
+                    // retry any pending playback locally via librespot.
+                    playbackMode = .idle
+                    activeDeviceName = nil
+                    if let uri = pendingUri {
+                        pendingUri = nil
+                        loadTrack(uri: uri)
+                    } else if let ctx = pendingContext {
+                        pendingContext = nil
+                        loadContext(uris: ctx.uris, index: ctx.index)
+                    }
+                }
             }
 
         case "PositionChanged":
