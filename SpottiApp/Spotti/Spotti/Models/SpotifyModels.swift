@@ -50,12 +50,27 @@ struct TrackSummary: Codable, Identifiable {
     let durationMs: UInt32
     let imageUrl: String?
     let trackNumber: UInt32?
+    let isPlayable: Bool
 
     enum CodingKeys: String, CodingKey {
         case id, uri, name, artist, album
         case durationMs = "duration_ms"
         case imageUrl = "image_url"
         case trackNumber = "track_number"
+        case isPlayable = "is_playable"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        uri = try c.decode(String.self, forKey: .uri)
+        name = try c.decode(String.self, forKey: .name)
+        artist = try c.decode(String.self, forKey: .artist)
+        album = try c.decode(String.self, forKey: .album)
+        durationMs = try c.decode(UInt32.self, forKey: .durationMs)
+        imageUrl = try c.decodeIfPresent(String.self, forKey: .imageUrl)
+        trackNumber = try c.decodeIfPresent(UInt32.self, forKey: .trackNumber)
+        isPlayable = try c.decodeIfPresent(Bool.self, forKey: .isPlayable) ?? true
     }
 }
 
