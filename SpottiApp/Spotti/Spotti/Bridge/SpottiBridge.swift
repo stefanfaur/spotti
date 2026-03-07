@@ -27,6 +27,12 @@ enum SpottiPlayerEvent {
     case positionChanged(positionMs: UInt32)
 }
 
+enum PlaybackMode: Equatable {
+    case idle
+    case local
+    case external(deviceId: String)
+}
+
 /// Main bridge class -- singleton that owns the Rust core pointer.
 class SpottiEngine: ObservableObject {
     static let shared = SpottiEngine()
@@ -48,10 +54,16 @@ class SpottiEngine: ObservableObject {
     @Published var availableDevices: [DeviceInfo] = []
     @Published var activeDeviceId: String?
     @Published var miniPlayerVisible = false
+    @Published var cacheSize: UInt64 = 0
+    @Published var cacheItemCount: UInt32 = 0
+    @Published var playbackMode: PlaybackMode = .idle
+    @Published var activeDeviceName: String?
 
     private var corePtr: OpaquePointer?
     private var positionTimer: Timer?
     private var lastNotifiedTrackId: String?
+    private(set) var ourDeviceId: String?
+    private var pendingUri: String?
 
     private init() {}
 
@@ -87,6 +99,15 @@ class SpottiEngine: ObservableObject {
                 if result == 0 {
                     self?.isAuthenticated = true
                     spotti_player_init(core)
+                    self?.setBitrate(UInt32(AppSettings.shared.audioQuality))
+                    // Fetch our librespot device ID
+                    let ptr = spotti_get_device_id(core)
+                    if let ptr = ptr {
+                        self?.ourDeviceId = String(cString: ptr)
+                        spotti_free_string(ptr)
+                    }
+                    // Start background sync
+                    spotti_start_playback_sync(core)
                     NotificationService.shared.requestPermission()
                 }
             }
@@ -95,15 +116,19 @@ class SpottiEngine: ObservableObject {
 
     func play() {
         guard let core = corePtr else { return }
-        isPlaying = true
-        startPositionTimer()
+        Task { @MainActor in
+            isPlaying = true
+            startPositionTimer()
+        }
         spotti_play(core)
     }
 
     func pause() {
         guard let core = corePtr else { return }
-        isPlaying = false
-        stopPositionTimer()
+        Task { @MainActor in
+            isPlaying = false
+            stopPositionTimer()
+        }
         spotti_pause(core)
     }
 
@@ -113,26 +138,28 @@ class SpottiEngine: ObservableObject {
 
     func next() {
         guard let core = corePtr else { return }
-        isLoading = true
+        Task { @MainActor in isLoading = true }
         spotti_next(core)
     }
 
     func previous() {
         guard let core = corePtr else { return }
-        isLoading = true
+        Task { @MainActor in isLoading = true }
         spotti_previous(core)
     }
 
     func seek(to positionMs: UInt32) {
         guard let core = corePtr else { return }
-        self.positionMs = positionMs
+        Task { @MainActor in self.positionMs = positionMs }
         spotti_seek(core, positionMs)
     }
 
     func loadTrack(uri: String) {
         guard let core = corePtr else { return }
-        isLoading = true
-        isPlaying = true
+        Task { @MainActor in
+            isLoading = true
+            isPlaying = true
+        }
         uri.withCString { ptr in
             spotti_load_track(core, ptr)
         }
@@ -140,8 +167,10 @@ class SpottiEngine: ObservableObject {
 
     func loadContext(uris: [String], index: UInt32) {
         guard let core = corePtr else { return }
-        isLoading = true
-        isPlaying = true
+        Task { @MainActor in
+            isLoading = true
+            isPlaying = true
+        }
         if let jsonData = try? JSONEncoder().encode(uris),
            let jsonString = String(data: jsonData, encoding: .utf8) {
             jsonString.withCString { ptr in
@@ -199,23 +228,53 @@ class SpottiEngine: ObservableObject {
         }
     }
 
+    // MARK: - Account
+
+    var username: String? {
+        guard let core = corePtr else { return nil }
+        let ptr = spotti_get_username(core)
+        guard let ptr else { return nil }
+        let name = String(cString: ptr)
+        spotti_free_string(ptr)
+        return name
+    }
+
+    // MARK: - Cache
+
+    func fetchCacheInfo() {
+        guard let core = corePtr else { return }
+        spotti_cache_info(core)
+    }
+
+    func clearCache() {
+        guard let core = corePtr else { return }
+        spotti_clear_cache(core)
+    }
+
+    // MARK: - Bitrate
+
+    func setBitrate(_ level: UInt32) {
+        guard let core = corePtr else { return }
+        spotti_set_bitrate(core, level)
+    }
+
     // MARK: - Volume, Shuffle, Repeat
 
     func setVolume(_ volume: UInt32) {
         guard let core = corePtr else { return }
-        self.volume = volume
+        Task { @MainActor in self.volume = volume }
         spotti_set_volume(core, volume)
     }
 
     func setShuffle(_ enabled: Bool) {
         guard let core = corePtr else { return }
-        shuffleEnabled = enabled
+        Task { @MainActor in shuffleEnabled = enabled }
         spotti_set_shuffle(core, enabled)
     }
 
     func setRepeat(_ mode: UInt32) {
         guard let core = corePtr else { return }
-        repeatMode = mode
+        Task { @MainActor in repeatMode = mode }
         spotti_set_repeat(core, mode)
     }
 
@@ -259,6 +318,7 @@ class SpottiEngine: ObservableObject {
             if let track = currentTrack {
                 ThemeEngine.shared.updateColors(for: track)
             }
+            playbackMode = .local
             isLoading = false
             startPositionTimer()
 
@@ -271,10 +331,13 @@ class SpottiEngine: ObservableObject {
 
         case "Stopped":
             isPlaying = false
+            isLoading = false
             currentTrack = nil
             positionMs = 0
             stopPositionTimer()
             ThemeEngine.shared.resetColors()
+            playbackMode = .idle
+            activeDeviceName = nil
 
         case "TrackChanged":
             decodeTrack(from: dict["track"])
@@ -300,6 +363,7 @@ class SpottiEngine: ObservableObject {
             stopPositionTimer()
 
         case "Error":
+            isLoading = false
             if let msg = dict["message"] as? String {
                 lastError = msg
             }
@@ -318,6 +382,10 @@ class SpottiEngine: ObservableObject {
             if let contentJson = dict["content_json"] as? String,
                let data = contentJson.data(using: .utf8) {
                 libraryContent = try? JSONDecoder().decode(LibraryContent.self, from: data)
+                if let content = libraryContent {
+                    SpotlightIndexer.shared.indexPlaylists(content.playlists)
+                    SpotlightIndexer.shared.indexTracks(content.savedTracks)
+                }
             }
         case "PlaylistDetail":
             if let detailJson = dict["detail_json"] as? String,
@@ -350,6 +418,18 @@ class SpottiEngine: ObservableObject {
                 default: repeatMode = 0
                 }
             }
+        case "CacheInfo":
+            if let size = dict["size_bytes"] as? UInt64 {
+                cacheSize = size
+            }
+            if let count = dict["item_count"] as? Int {
+                cacheItemCount = UInt32(count)
+            }
+
+        case "CacheCleared":
+            cacheSize = 0
+            cacheItemCount = 0
+
         case "ArtCached":
             break
 
@@ -363,6 +443,49 @@ class SpottiEngine: ObservableObject {
             if let deviceId = dict["device_id"] as? String {
                 activeDeviceId = deviceId
                 fetchDevices()
+            }
+
+        case "PlaybackSynced":
+            let isOurDevice = dict["is_our_device"] as? Bool ?? false
+            let isPlaying = dict["is_playing"] as? Bool ?? false
+
+            if isOurDevice {
+                // librespot is authoritative for track/position; only sync shuffle/repeat
+                if let shuffleVal = dict["shuffle"] as? Bool {
+                    shuffleEnabled = shuffleVal
+                }
+                if let modeStr = dict["repeat"] as? String {
+                    switch modeStr {
+                    case "Context": repeatMode = 1
+                    case "Track":   repeatMode = 2
+                    default:        repeatMode = 0
+                    }
+                }
+                playbackMode = .local
+                return
+            }
+
+            // External device
+            if isPlaying, let trackObj = dict["track"] {
+                decodeTrack(from: trackObj)
+                if let pos = dict["position_ms"] as? UInt32 {
+                    positionMs = pos
+                }
+                self.isPlaying = true
+                activeDeviceName = dict["device_name"] as? String
+                let deviceId = dict["device_id"] as? String ?? ""
+                playbackMode = .external(deviceId: deviceId)
+                if let track = currentTrack {
+                    ThemeEngine.shared.updateColors(for: track)
+                }
+            } else if case .external = playbackMode {
+                // Was external, nothing playing now — return to idle
+                playbackMode = .idle
+                currentTrack = nil
+                self.isPlaying = false
+                activeDeviceName = nil
+                stopPositionTimer()
+                ThemeEngine.shared.resetColors()
             }
 
         default:
