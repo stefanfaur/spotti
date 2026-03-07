@@ -6,30 +6,6 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let error = engine.lastError {
-                HStack {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.red)
-                    Text(error)
-                        .font(.caption)
-                    Spacer()
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            engine.lastError = nil
-                        }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.caption2)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(8)
-                .background(.red.opacity(0.15), in: .rect(cornerRadius: 8))
-                .padding(.horizontal, 8)
-                .padding(.top, 4)
-                .transition(.move(edge: .top).combined(with: .opacity))
-            }
-
             if engine.isAuthenticated {
                 MainLayout()
                     .transition(.opacity)
@@ -40,7 +16,6 @@ struct ContentView: View {
         }
         .background(VisualEffectBackground(material: theme.blurLevel.material))
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.isAuthenticated)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: engine.lastError != nil)
     }
 }
 
@@ -78,9 +53,33 @@ struct LoginView: View {
     }
 }
 
+struct ErrorToastView: View {
+    let message: String
+    @EnvironmentObject private var theme: ThemeEngine
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red.opacity(0.8))
+                .font(.caption)
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.primary.opacity(0.85))
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .glassEffect(
+            .regular.tint(.red.opacity(0.1)),
+            in: .capsule
+        )
+    }
+}
+
 struct MainLayout: View {
     @EnvironmentObject private var theme: ThemeEngine
+    @EnvironmentObject private var engine: SpottiEngine
     @State private var showNowPlaying = false
+    @State private var visibleError: String?
 
     var body: some View {
         ZStack {
@@ -138,7 +137,35 @@ struct MainLayout: View {
                 NowPlayingFullView(showNowPlaying: $showNowPlaying)
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
+
+            if let error = visibleError {
+                VStack {
+                    Spacer()
+                    ErrorToastView(message: error)
+                        .padding(.bottom, 96)
+                        .transition(
+                            .opacity.combined(with: .scale(scale: 0.85))
+                        )
+                }
+                .allowsHitTesting(false)
+            }
         }
         .animation(.spring(response: 0.5, dampingFraction: 0.85), value: showNowPlaying)
+        .animation(.spring(response: 0.4, dampingFraction: 0.75), value: visibleError != nil)
+        .onChange(of: engine.lastError) { _, newError in
+            if let error = newError {
+                withAnimation {
+                    visibleError = error
+                }
+                engine.lastError = nil
+            }
+        }
+        .task(id: visibleError) {
+            guard visibleError != nil else { return }
+            try? await Task.sleep(for: .seconds(3))
+            withAnimation {
+                visibleError = nil
+            }
+        }
     }
 }

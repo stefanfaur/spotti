@@ -38,6 +38,7 @@ struct SpottiApp: App {
                 }
         }
         .defaultSize(width: 1100, height: 700)
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(after: .newItem) {
