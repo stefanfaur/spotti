@@ -27,33 +27,33 @@ enum BlurLevel: Int, CaseIterable, Hashable {
 }
 
 struct SettingsView: View {
-    @EnvironmentObject private var theme: ThemeEngine
-
     var body: some View {
-        Form {
-            Section("Appearance") {
-                Picker("Window blur", selection: $theme.blurLevel) {
-                    ForEach(BlurLevel.allCases, id: \.self) { level in
-                        Text(level.label).tag(level)
-                    }
-                }
-                .pickerStyle(.segmented)
-
-                VStack(alignment: .leading) {
-                    HStack {
-                        Text("Glass tint opacity")
-                        Spacer()
-                        Text("\(Int(theme.glassTintOpacity * 100))%")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                    Slider(value: $theme.glassTintOpacity, in: 0...0.5, step: 0.05)
+        TabView {
+            AppearanceSettingsTab()
+                .tabItem {
+                    Label("Appearance", systemImage: "paintbrush")
                 }
 
-                Toggle("Adaptive color from album art", isOn: $theme.adaptiveColorEnabled)
-            }
+            PlaybackSettingsTab()
+                .tabItem {
+                    Label("Playback", systemImage: "play.circle")
+                }
+
+            ShortcutsSettingsTab()
+                .tabItem {
+                    Label("Shortcuts", systemImage: "keyboard")
+                }
+
+            CacheSettingsTab()
+                .tabItem {
+                    Label("Cache & Data", systemImage: "internaldrive")
+                }
+
+            AccountSettingsTab()
+                .tabItem {
+                    Label("Account", systemImage: "person.circle")
+                }
         }
-        .formStyle(.grouped)
-        .frame(width: 420, height: 240)
+        .frame(width: 520, height: 420)
     }
 }

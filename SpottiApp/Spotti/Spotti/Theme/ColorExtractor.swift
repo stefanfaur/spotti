@@ -1,6 +1,29 @@
 import AppKit
 import Foundation
 
+extension NSColor {
+    convenience init?(hex: String) {
+        var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+        hexSanitized = hexSanitized.hasPrefix("#") ? String(hexSanitized.dropFirst()) : hexSanitized
+        guard hexSanitized.count == 6,
+              let hexNumber = UInt64(hexSanitized, radix: 16) else { return nil }
+        self.init(
+            red: CGFloat((hexNumber & 0xFF0000) >> 16) / 255,
+            green: CGFloat((hexNumber & 0x00FF00) >> 8) / 255,
+            blue: CGFloat(hexNumber & 0x0000FF) / 255,
+            alpha: 1.0
+        )
+    }
+
+    var hexString: String {
+        guard let rgb = usingColorSpace(.sRGB) else { return "" }
+        return String(format: "#%02X%02X%02X",
+                      Int(rgb.redComponent * 255),
+                      Int(rgb.greenComponent * 255),
+                      Int(rgb.blueComponent * 255))
+    }
+}
+
 struct ExtractedColors: Equatable {
     let dominant: NSColor
     let accent: NSColor

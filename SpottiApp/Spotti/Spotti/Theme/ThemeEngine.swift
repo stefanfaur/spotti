@@ -20,19 +20,31 @@ class ThemeEngine: ObservableObject {
         dominantColor.opacity(0.18)
     }
 
-    @Published var glassTintOpacity: Double = 0.15
-    @Published var colorTransitionDuration: Double = 0.6
-
-    /// Controls the behind-window blur intensity. Change via Settings (⌘,).
-    @Published var blurLevel: BlurLevel = .subtle
-
-    /// When false, colors stay at defaults and don't update from album art.
-    @Published var adaptiveColorEnabled: Bool = true {
+    @AppStorage("theme.glassTintOpacity") var glassTintOpacity: Double = 0.15
+    @AppStorage("theme.blurLevel") var blurLevel: BlurLevel = .subtle
+    @AppStorage("theme.adaptiveColor") var adaptiveColorEnabled: Bool = true {
         didSet {
             if !adaptiveColorEnabled {
                 lastExtractedTrackId = nil
                 applyColors(.default)
             }
+        }
+    }
+
+    var effectiveAccentColor: Color {
+        let hex = AppSettings.shared.fixedAccentHex
+        if !hex.isEmpty, let nsColor = NSColor(hex: hex) {
+            return Color(nsColor: nsColor)
+        }
+        return accentColor
+    }
+
+    var colorTransitionDuration: Double {
+        switch AppSettings.shared.colorTransitionSpeed {
+        case 0: 0.0
+        case 1: 0.3
+        case 3: 1.2
+        default: 0.6
         }
     }
 
