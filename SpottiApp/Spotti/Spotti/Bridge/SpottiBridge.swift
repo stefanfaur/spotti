@@ -64,6 +64,11 @@ class SpottiEngine: ObservableObject {
     private var lastNotifiedTrackId: String?
     private(set) var ourDeviceId: String?
     private var pendingUri: String?
+    private struct PendingContext {
+        let uris: [String]
+        let index: UInt32
+    }
+    private var pendingContext: PendingContext?
 
     private init() {}
 
@@ -212,12 +217,10 @@ class SpottiEngine: ObservableObject {
            let jsonString = String(data: jsonData, encoding: .utf8) {
 
             if case .external = playbackMode, let ours = ourDeviceId {
+                pendingContext = PendingContext(uris: uris, index: index)
                 Task { @MainActor in isLoading = true }
-                ours.withCString { transferPtr in
-                    spotti_transfer_playback(core, transferPtr, false)
-                }
-                jsonString.withCString { ptr in
-                    spotti_load_context(core, ptr, index)
+                ours.withCString { ptr in
+                    spotti_transfer_playback(core, ptr, false)
                 }
                 return
             }
@@ -364,8 +367,8 @@ class SpottiEngine: ObservableObject {
         switch eventType {
         case "Playing":
             isPlaying = true
-            if let pos = dict["position_ms"] as? UInt32 {
-                positionMs = pos
+            if let pos = dict["position_ms"] as? Int {
+                positionMs = UInt32(pos)
             }
             decodeTrack(from: dict["track"])
             if let track = currentTrack {
@@ -377,8 +380,8 @@ class SpottiEngine: ObservableObject {
 
         case "Paused":
             isPlaying = false
-            if let pos = dict["position_ms"] as? UInt32 {
-                positionMs = pos
+            if let pos = dict["position_ms"] as? Int {
+                positionMs = UInt32(pos)
             }
             stopPositionTimer()
 
@@ -422,8 +425,8 @@ class SpottiEngine: ObservableObject {
             }
 
         case "PositionChanged":
-            if let pos = dict["position_ms"] as? UInt32 {
-                positionMs = pos
+            if let pos = dict["position_ms"] as? Int {
+                positionMs = UInt32(pos)
             }
 
         case "SearchResults":
@@ -500,6 +503,10 @@ class SpottiEngine: ObservableObject {
                     pendingUri = nil
                     loadTrack(uri: uri)
                 }
+                if let ctx = pendingContext {
+                    pendingContext = nil
+                    loadContext(uris: ctx.uris, index: ctx.index)
+                }
             }
 
         case "PlaybackSynced":
@@ -523,20 +530,26 @@ class SpottiEngine: ObservableObject {
             }
 
             // External device
-            if isPlaying, let trackObj = dict["track"] {
+            if let trackObj = dict["track"] {
+                // Track exists (playing or paused on external device)
                 decodeTrack(from: trackObj)
-                if let pos = dict["position_ms"] as? UInt32 {
-                    positionMs = pos
+                if let pos = dict["position_ms"] as? Int {
+                    positionMs = UInt32(pos)
                 }
-                self.isPlaying = true
+                self.isPlaying = isPlaying
                 activeDeviceName = dict["device_name"] as? String
                 let deviceId = dict["device_id"] as? String ?? ""
                 playbackMode = .external(deviceId: deviceId)
+                if isPlaying {
+                    startPositionTimer()
+                } else {
+                    stopPositionTimer()
+                }
                 if let track = currentTrack {
                     ThemeEngine.shared.updateColors(for: track)
                 }
             } else if case .external = playbackMode {
-                // Was external, nothing playing now — return to idle
+                // No track at all — nothing playing anywhere
                 playbackMode = .idle
                 currentTrack = nil
                 self.isPlaying = false
