@@ -16,6 +16,7 @@ librespot-metadata = { git = "https://github.com/librespot-org/librespot", branc
 
 # Web API
 rspotify = { version = "0.15", features = ["cli"] }
+chrono = "0.4"
 
 # Async
 tokio = { version = "1", features = ["full"] }

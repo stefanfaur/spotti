@@ -10,6 +10,7 @@ use crate::player::types::RepeatMode;
 use crate::player::{PlayerCommand, PlayerEvent, PlayerEngine};
 use crate::runtime::get_runtime;
 use crate::spotify::auth::AuthManager;
+use rspotify::clients::OAuthClient;
 
 /// Callback type for player events.
 /// `event_json` is a JSON string describing the event.
@@ -681,6 +682,91 @@ pub extern "C" fn spotti_stop_playback_sync(core: *mut SpottiCore) {
     let core = unsafe { &mut *core };
     if let Some(handle) = core.sync_task.take() {
         handle.abort();
+    }
+}
+
+// ── Web API Playback Control ──
+// These functions control playback on the currently active Spotify device
+// via the Web API. Used when in external/passive mode.
+
+/// Resume playback on the currently active device via Web API.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_web_play(core: *mut SpottiCore) {
+    let core = &*core;
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            get_runtime().spawn(async move {
+                if let Err(e) = client.resume_playback(None, None).await {
+                    log::warn!("web_play failed: {e}");
+                }
+            });
+        }
+    }
+}
+
+/// Pause playback on the currently active device via Web API.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_web_pause(core: *mut SpottiCore) {
+    let core = &*core;
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            get_runtime().spawn(async move {
+                if let Err(e) = client.pause_playback(None).await {
+                    log::warn!("web_pause failed: {e}");
+                }
+            });
+        }
+    }
+}
+
+/// Skip to next track on the currently active device via Web API.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_web_next(core: *mut SpottiCore) {
+    let core = &*core;
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            get_runtime().spawn(async move {
+                if let Err(e) = client.next_track(None).await {
+                    log::warn!("web_next failed: {e}");
+                }
+            });
+        }
+    }
+}
+
+/// Skip to previous track on the currently active device via Web API.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_web_previous(core: *mut SpottiCore) {
+    let core = &*core;
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            get_runtime().spawn(async move {
+                if let Err(e) = client.previous_track(None).await {
+                    log::warn!("web_previous failed: {e}");
+                }
+            });
+        }
+    }
+}
+
+/// Seek on the currently active device via Web API.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_web_seek(core: *mut SpottiCore, position_ms: u32) {
+    let core = &*core;
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            get_runtime().spawn(async move {
+                let pos = chrono::Duration::milliseconds(position_ms as i64);
+                if let Err(e) = client.seek_track(pos, None).await {
+                    log::warn!("web_seek failed: {e}");
+                }
+            });
+        }
     }
 }
 
