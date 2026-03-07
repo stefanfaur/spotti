@@ -70,6 +70,6 @@ struct SettingsView: View {
                     Label("Account", systemImage: "person.circle")
                 }
         }
-        .frame(width: 520, height: 420)
+        .frame(width: 520, height: 540)
     }
 }

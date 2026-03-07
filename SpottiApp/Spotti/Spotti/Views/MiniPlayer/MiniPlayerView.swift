@@ -84,7 +84,7 @@ struct MiniPlayerView: View {
 
     @ViewBuilder
     private var controls: some View {
-        GlassEffectContainer(spacing: 4) {
+        GlassEffectContainer(spacing: theme.glassSpacing) {
             HStack(spacing: 8) {
                 Button { engine.togglePlayPause() } label: {
                     Image(systemName: engine.isPlaying ? "pause.fill" : "play.fill")

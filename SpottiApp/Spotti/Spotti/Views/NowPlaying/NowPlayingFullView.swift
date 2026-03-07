@@ -219,7 +219,7 @@ struct NowPlayingFullView: View {
 
     @ViewBuilder
     private var controlsView: some View {
-        GlassEffectContainer(spacing: 12) {
+        GlassEffectContainer(spacing: theme.glassSpacing) {
             HStack(spacing: 28) {
                 Button { engine.toggleShuffle() } label: {
                     Image(systemName: "shuffle")

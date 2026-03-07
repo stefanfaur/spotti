@@ -103,7 +103,7 @@ struct PlayerBarView: View {
     @ViewBuilder
     private var playbackControls: some View {
         VStack(spacing: 6) {
-            GlassEffectContainer(spacing: 16) {
+            GlassEffectContainer(spacing: theme.glassSpacing) {
                 HStack(spacing: 12) {
                     Button { engine.toggleShuffle() } label: {
                         Image(systemName: "shuffle")

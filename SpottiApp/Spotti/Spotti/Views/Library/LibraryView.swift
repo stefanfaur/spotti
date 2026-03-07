@@ -11,7 +11,7 @@ struct LibraryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            GlassEffectContainer(spacing: 8) {
+            GlassEffectContainer(spacing: theme.glassSpacing) {
                 HStack(spacing: 8) {
                     ForEach(Array(tabs.enumerated()), id: \.offset) { index, title in
                         tabButton(index: index, label: title)

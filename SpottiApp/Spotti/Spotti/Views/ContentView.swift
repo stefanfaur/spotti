@@ -96,15 +96,17 @@ struct MainLayout: View {
                 )
 
                 // Secondary radial glow for more depth in the refraction
-                RadialGradient(
-                    colors: [
-                        theme.effectiveAccentColor.opacity(theme.radialGlowStrength),
-                        .clear
-                    ],
-                    center: .bottomTrailing,
-                    startRadius: 50,
-                    endRadius: 400
-                )
+                if theme.gradientComplexity != .simple {
+                    RadialGradient(
+                        colors: [
+                            theme.effectiveAccentColor.opacity(theme.radialGlowStrength * theme.gradientIntensity),
+                            .clear
+                        ],
+                        center: .bottomTrailing,
+                        startRadius: 50,
+                        endRadius: 400
+                    )
+                }
 
                 if theme.gradientComplexity == .rich {
                     RadialGradient(
@@ -137,7 +139,7 @@ struct MainLayout: View {
                                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                                     .clipShape(.rect(cornerRadius: theme.glassCornerRadius))
                                     .glassEffect(
-                                        .regular.tint(theme.dominantColor.opacity(theme.sidebarTintOpacity)),
+                                        .regular.tint(theme.dominantColor.opacity(theme.mainContentTintOpacity)),
                                         in: .rect(cornerRadius: theme.glassCornerRadius)
                                     )
                             } else {

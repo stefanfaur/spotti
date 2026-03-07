@@ -16,6 +16,7 @@ class ThemeEngine: ObservableObject {
     @AppStorage("theme.sidebarTintOpacity")   var sidebarTintOpacity: Double = 0.25   // 0–0.5
     @AppStorage("theme.playerBarTintOpacity") var playerBarTintOpacity: Double = 0.20 // 0–0.5
     @AppStorage("theme.mainContentGlass")     var mainContentGlass: Bool = false
+    @AppStorage("theme.mainContentTintOpacity") var mainContentTintOpacity: Double = 0.15 // 0–0.5
 
     // MARK: - Background Gradient Settings
     @AppStorage("theme.gradientIntensity")    var gradientIntensity: Double = 1.0     // 0.5–1.5

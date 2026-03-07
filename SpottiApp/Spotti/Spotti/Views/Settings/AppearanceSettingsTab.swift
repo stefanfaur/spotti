@@ -76,6 +76,17 @@ struct AppearanceSettingsTab: View {
                     Slider(value: $theme.playerBarTintOpacity, in: 0...0.5, step: 0.05)
                 }
 
+                VStack(alignment: .leading) {
+                    HStack {
+                        Text("Main content tint")
+                        Spacer()
+                        Text("\(Int(theme.mainContentTintOpacity * 100))%")
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                    Slider(value: $theme.mainContentTintOpacity, in: 0...0.5, step: 0.05)
+                }
+
                 Toggle("Adaptive color from album art", isOn: $theme.adaptiveColorEnabled)
             }
 
@@ -107,6 +118,7 @@ struct AppearanceSettingsTab: View {
                         Text(level.label).tag(level)
                     }
                 }
+                .pickerStyle(.segmented)
             }
 
             Section("Colors") {
