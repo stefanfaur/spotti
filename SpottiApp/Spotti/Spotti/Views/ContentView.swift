@@ -111,7 +111,7 @@ struct MainLayout: View {
                 if theme.gradientComplexity == .rich {
                     RadialGradient(
                         colors: [
-                            theme.effectiveAccentColor.opacity(0.2 * theme.gradientIntensity),
+                            theme.effectiveAccentColor.opacity(theme.radialGlowStrength * theme.gradientIntensity),
                             .clear
                         ],
                         center: .topTrailing,
