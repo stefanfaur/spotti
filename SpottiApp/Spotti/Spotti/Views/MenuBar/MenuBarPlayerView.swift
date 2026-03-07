@@ -156,7 +156,7 @@ struct MenuBarPlayerView: View {
                 ),
                 in: 0...100
             )
-            .tint(theme.accentColor)
+            .tint(theme.effectiveAccentColor)
 
             Image(systemName: "speaker.wave.3.fill")
                 .font(.caption)
@@ -179,7 +179,7 @@ struct MenuBarPlayerView: View {
                 HStack(spacing: 8) {
                     Image(systemName: activeDevice.systemImageName)
                         .font(.caption)
-                        .foregroundStyle(theme.accentColor)
+                        .foregroundStyle(theme.effectiveAccentColor)
                     Text(activeDevice.name)
                         .font(.caption)
                         .fontWeight(.medium)

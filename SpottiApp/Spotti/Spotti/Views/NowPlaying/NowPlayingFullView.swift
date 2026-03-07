@@ -170,13 +170,13 @@ struct NowPlayingFullView: View {
                             .frame(height: isSeekBarHovered ? 6 : 4)
 
                         Capsule()
-                            .fill(theme.accentColor)
+                            .fill(theme.effectiveAccentColor)
                             .frame(width: geo.size.width * progress, height: isSeekBarHovered ? 6 : 4)
 
                         if isSeekBarHovered {
                             Circle()
                                 .fill(.white)
-                                .shadow(color: theme.accentColor.opacity(0.6), radius: 4)
+                                .shadow(color: theme.effectiveAccentColor.opacity(0.6), radius: 4)
                                 .frame(width: 14, height: 14)
                                 .offset(x: geo.size.width * progress - 7)
                                 .transition(.scale.combined(with: .opacity))
@@ -224,7 +224,7 @@ struct NowPlayingFullView: View {
                 Button { engine.toggleShuffle() } label: {
                     Image(systemName: "shuffle")
                         .font(.title3)
-                        .foregroundStyle(engine.shuffleEnabled ? theme.accentColor : .white.opacity(0.7))
+                        .foregroundStyle(engine.shuffleEnabled ? theme.effectiveAccentColor : .white.opacity(0.7))
                         .frame(width: 40, height: 40)
                         .contentShape(Circle())
                         .glassEffect(.regular, in: .circle)
@@ -249,7 +249,7 @@ struct NowPlayingFullView: View {
                         .contentShape(Circle())
                         .contentTransition(.symbolEffect(.replace.byLayer.downUp))
                         .glassEffect(
-                            .regular.tint(theme.accentColor),
+                            .regular.tint(theme.effectiveAccentColor),
                             in: .circle
                         )
                 }
@@ -268,7 +268,7 @@ struct NowPlayingFullView: View {
                 Button { engine.cycleRepeat() } label: {
                     Image(systemName: engine.repeatMode == 2 ? "repeat.1" : "repeat")
                         .font(.title3)
-                        .foregroundStyle(engine.repeatMode > 0 ? theme.accentColor : .white.opacity(0.7))
+                        .foregroundStyle(engine.repeatMode > 0 ? theme.effectiveAccentColor : .white.opacity(0.7))
                         .frame(width: 40, height: 40)
                         .contentShape(Circle())
                         .glassEffect(.regular, in: .circle)
@@ -294,7 +294,7 @@ struct NowPlayingFullView: View {
                 ),
                 in: 0...100
             )
-            .tint(theme.accentColor)
+            .tint(theme.effectiveAccentColor)
             .frame(width: 120)
 
             Image(systemName: "speaker.wave.3.fill")

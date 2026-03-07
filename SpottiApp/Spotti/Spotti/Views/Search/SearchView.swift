@@ -102,7 +102,7 @@ struct SearchView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .glassEffect(
-            .regular.tint(theme.accentColor).interactive(),
+            .regular.tint(theme.effectiveAccentColor).interactive(),
             in: .capsule
         )
         .padding(.horizontal, 16)

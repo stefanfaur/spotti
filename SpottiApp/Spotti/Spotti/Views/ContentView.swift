@@ -89,7 +89,7 @@ struct MainLayout: View {
                 LinearGradient(
                     colors: [
                         theme.dominantColor.opacity(0.45),
-                        theme.accentColor.opacity(0.25),
+                        theme.effectiveAccentColor.opacity(0.25),
                         theme.dominantColor.opacity(0.15)
                     ],
                     startPoint: .topLeading,
@@ -99,7 +99,7 @@ struct MainLayout: View {
                 // Secondary radial glow for more depth in the refraction
                 RadialGradient(
                     colors: [
-                        theme.accentColor.opacity(0.3),
+                        theme.effectiveAccentColor.opacity(0.3),
                         .clear
                     ],
                     center: .bottomTrailing,

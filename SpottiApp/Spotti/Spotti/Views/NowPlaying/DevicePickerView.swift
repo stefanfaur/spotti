@@ -56,14 +56,14 @@ private struct DeviceRow: View {
             HStack(spacing: 12) {
                 Image(systemName: device.systemImageName)
                     .font(.body)
-                    .foregroundStyle(isActive ? theme.accentColor : .primary)
+                    .foregroundStyle(isActive ? theme.effectiveAccentColor : .primary)
                     .frame(width: 24)
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(device.name)
                         .font(.callout)
                         .fontWeight(isActive ? .semibold : .regular)
-                        .foregroundStyle(isActive ? theme.accentColor : .primary)
+                        .foregroundStyle(isActive ? theme.effectiveAccentColor : .primary)
                     Text(device.deviceType)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -74,7 +74,7 @@ private struct DeviceRow: View {
                 if isActive {
                     Image(systemName: "speaker.wave.2.fill")
                         .font(.caption)
-                        .foregroundStyle(theme.accentColor)
+                        .foregroundStyle(theme.effectiveAccentColor)
                         .transition(.scale.combined(with: .opacity))
                 }
             }

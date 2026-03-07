@@ -77,32 +77,11 @@ struct AlbumDetailView: View {
     private func trackList(_ album: AlbumDetail) -> some View {
         LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(Array(album.tracks.enumerated()), id: \.element.id) { index, track in
-                HStack(spacing: 12) {
-                    Text("\(track.trackNumber ?? UInt32(index + 1))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, alignment: .trailing)
-                        .monospacedDigit()
-
-                    Text(track.name)
-                        .font(.body)
-                        .lineLimit(1)
-
-                    Spacer()
-
-                    Text(formatDuration(track.durationMs))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
-                .onTapGesture {
+                TrackRow(track: track, trackNumber: Int(track.trackNumber ?? UInt32(index + 1))) {
                     let uris = album.tracks.map(\.uri)
                     engine.loadContext(uris: uris, index: UInt32(index))
                 }
-                .hoverHighlight()
+                .padding(.horizontal)
             }
         }
     }

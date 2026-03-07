@@ -77,9 +77,9 @@ struct SidebarView: View {
         .background {
             if isSelected {
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(theme.accentColor.opacity(0.25))
+                    .fill(theme.effectiveAccentColor.opacity(0.25))
                     .glassEffect(
-                        .regular.tint(theme.accentColor),
+                        .regular.tint(theme.effectiveAccentColor),
                         in: .rect(cornerRadius: 8)
                     )
             }

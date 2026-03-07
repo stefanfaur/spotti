@@ -81,37 +81,10 @@ struct PlaylistDetailView: View {
     private func trackList(_ playlist: PlaylistDetail) -> some View {
         LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(Array(playlist.tracks.enumerated()), id: \.element.id) { index, track in
-                HStack(spacing: 12) {
-                    Text("\(index + 1)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 28, alignment: .trailing)
-                        .monospacedDigit()
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(track.name)
-                            .font(.body)
-                            .lineLimit(1)
-                        Text(track.artist)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-
-                    Spacer()
-
-                    Text(formatDuration(track.durationMs))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 6)
-                .contentShape(Rectangle())
-                .onTapGesture {
+                TrackRow(track: track, trackNumber: index + 1) {
                     playFromIndex(playlist, index: index)
                 }
-                .hoverHighlight()
+                .padding(.horizontal)
             }
         }
     }

@@ -2,18 +2,48 @@ import SwiftUI
 
 struct TrackRow: View {
     let track: TrackSummary
+    let trackNumber: Int?
     let action: () -> Void
     @EnvironmentObject private var engine: SpottiEngine
     @EnvironmentObject private var theme: ThemeEngine
     @State private var isHovered = false
 
+    init(track: TrackSummary, trackNumber: Int? = nil, action: @escaping () -> Void) {
+        self.track = track
+        self.trackNumber = trackNumber
+        self.action = action
+    }
+
     private var isCurrentTrack: Bool {
-        engine.currentTrack?.id == track.id
+        guard let current = engine.currentTrack else { return false }
+        if let currentUri = current.uri {
+            return track.uri == currentUri
+        }
+        // Fallback: match bare ID against both id and uri suffix
+        let currentId = current.id
+        return track.id == currentId
+            || track.uri == currentId
+            || track.uri.hasSuffix(":\(currentId)")
     }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 12) {
+                if let number = trackNumber {
+                    Group {
+                        if isCurrentTrack && engine.isPlaying {
+                            EqualizerBars(color: theme.effectiveAccentColor)
+                                .frame(width: 16, height: 12)
+                        } else {
+                            Text("\(number)")
+                                .font(.caption)
+                                .foregroundStyle(isCurrentTrack ? theme.effectiveAccentColor : .secondary)
+                        }
+                    }
+                    .frame(width: 28, alignment: .trailing)
+                    .monospacedDigit()
+                }
+
                 AsyncImage(url: track.imageUrl.flatMap(URL.init)) { image in
                     image.resizable().aspectRatio(contentMode: .fill)
                 } placeholder: {
@@ -26,7 +56,7 @@ struct TrackRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.name)
                         .font(.body)
-                        .foregroundStyle(isCurrentTrack ? theme.accentColor : .primary)
+                        .foregroundStyle(isCurrentTrack ? theme.effectiveAccentColor : .primary)
                         .fontWeight(isCurrentTrack ? .semibold : .regular)
                     Text(track.artist)
                         .font(.caption)
@@ -36,8 +66,8 @@ struct TrackRow: View {
 
                 Spacer()
 
-                if isCurrentTrack && engine.isPlaying {
-                    EqualizerBars(color: theme.accentColor)
+                if trackNumber == nil && isCurrentTrack && engine.isPlaying {
+                    EqualizerBars(color: theme.effectiveAccentColor)
                         .frame(width: 16, height: 12)
                 }
 
@@ -52,11 +82,23 @@ struct TrackRow: View {
         }
         .buttonStyle(.plain)
         .background {
-            if isHovered {
+            if isCurrentTrack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(.white.opacity(0.06))
+                    .glassEffect(
+                        .regular.tint(theme.effectiveAccentColor.opacity(0.3)),
+                        in: .rect(cornerRadius: 8)
+                    )
+            } else if isHovered {
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(.quaternary.opacity(0.5))
+                    .fill(.white.opacity(0.06))
+                    .glassEffect(
+                        .regular,
+                        in: .rect(cornerRadius: 6)
+                    )
             }
         }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCurrentTrack)
         .animation(.easeOut(duration: 0.15), value: isHovered)
         .onHover { isHovered = $0 }
     }

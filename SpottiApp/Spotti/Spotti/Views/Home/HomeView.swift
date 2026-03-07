@@ -96,7 +96,7 @@ struct PlaylistCard: View {
                             .foregroundStyle(.white)
                             .frame(width: 40, height: 40)
                             .glassEffect(
-                                .regular.tint(theme.accentColor).interactive(),
+                                .regular.tint(theme.effectiveAccentColor).interactive(),
                                 in: .circle
                             )
                             .padding(8)
@@ -152,7 +152,7 @@ private struct HomeAlbumCard: View {
                             .foregroundStyle(.white)
                             .frame(width: 40, height: 40)
                             .glassEffect(
-                                .regular.tint(theme.accentColor).interactive(),
+                                .regular.tint(theme.effectiveAccentColor).interactive(),
                                 in: .circle
                             )
                             .padding(8)

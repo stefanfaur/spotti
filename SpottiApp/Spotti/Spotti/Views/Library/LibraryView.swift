@@ -48,7 +48,7 @@ struct LibraryView: View {
                 .padding(.vertical, 6)
                 .glassEffect(
                     selectedTab == index
-                        ? .regular.tint(theme.accentColor).interactive()
+                        ? .regular.tint(theme.effectiveAccentColor).interactive()
                         : .regular.interactive(),
                     in: .capsule
                 )
