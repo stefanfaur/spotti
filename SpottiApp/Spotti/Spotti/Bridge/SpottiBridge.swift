@@ -186,6 +186,16 @@ class SpottiEngine: ObservableObject {
 
     func loadTrack(uri: String) {
         guard let core = corePtr else { return }
+
+        if case .external = playbackMode, let ours = ourDeviceId {
+            pendingUri = uri
+            Task { @MainActor in isLoading = true }
+            ours.withCString { ptr in
+                spotti_transfer_playback(core, ptr, true)
+            }
+            return
+        }
+
         Task { @MainActor in
             isLoading = true
             isPlaying = true
@@ -197,12 +207,25 @@ class SpottiEngine: ObservableObject {
 
     func loadContext(uris: [String], index: UInt32) {
         guard let core = corePtr else { return }
-        Task { @MainActor in
-            isLoading = true
-            isPlaying = true
-        }
+
         if let jsonData = try? JSONEncoder().encode(uris),
            let jsonString = String(data: jsonData, encoding: .utf8) {
+
+            if case .external = playbackMode, let ours = ourDeviceId {
+                Task { @MainActor in isLoading = true }
+                ours.withCString { transferPtr in
+                    spotti_transfer_playback(core, transferPtr, false)
+                }
+                jsonString.withCString { ptr in
+                    spotti_load_context(core, ptr, index)
+                }
+                return
+            }
+
+            Task { @MainActor in
+                isLoading = true
+                isPlaying = true
+            }
             jsonString.withCString { ptr in
                 spotti_load_context(core, ptr, index)
             }
@@ -473,6 +496,10 @@ class SpottiEngine: ObservableObject {
             if let deviceId = dict["device_id"] as? String {
                 activeDeviceId = deviceId
                 fetchDevices()
+                if let uri = pendingUri {
+                    pendingUri = nil
+                    loadTrack(uri: uri)
+                }
             }
 
         case "PlaybackSynced":
