@@ -71,6 +71,25 @@ struct PlayerBarView: View {
                 }
                 .transition(.opacity.combined(with: .move(edge: .leading)))
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: track.id)
+
+                if case .external = engine.playbackMode,
+                   let deviceName = engine.activeDeviceName {
+                    HStack(spacing: 4) {
+                        Image(systemName: "hifispeaker.fill")
+                            .font(.system(size: 9))
+                        Text(deviceName)
+                            .font(.system(size: 10))
+                        Button("Transfer") {
+                            if let ours = engine.ourDeviceId {
+                                engine.transferPlayback(to: ours)
+                            }
+                        }
+                        .font(.system(size: 10))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(theme.effectiveAccentColor)
+                    }
+                    .foregroundStyle(.secondary)
+                }
             } else {
                 Text("Not Playing")
                     .font(.callout)
@@ -89,45 +108,45 @@ struct PlayerBarView: View {
                 HStack(spacing: 12) {
                     Button { engine.toggleShuffle() } label: {
                         Image(systemName: "shuffle")
-                            .font(.caption2)
-                            .foregroundStyle(engine.shuffleEnabled ? theme.accentColor : .primary)
-                            .frame(width: 26, height: 26)
+                            .font(.system(size: 10))
+                            .foregroundStyle(engine.shuffleEnabled ? theme.effectiveAccentColor : .primary)
+                            .frame(width: 22, height: 22)
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
 
                     Button { engine.previous() } label: {
                         Image(systemName: "backward.fill")
-                            .font(.callout)
-                            .frame(width: 34, height: 34)
+                            .font(.footnote)
+                            .frame(width: 28, height: 28)
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
 
                     Button { engine.togglePlayPause() } label: {
                         Image(systemName: engine.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.title3)
-                            .frame(width: 40, height: 40)
+                            .font(.callout)
+                            .frame(width: 34, height: 34)
                             .contentTransition(.symbolEffect(.replace.byLayer.downUp))
                     }
                     .buttonStyle(.glassProminent)
-                    .tint(theme.accentColor)
+                    .tint(theme.effectiveAccentColor)
                     .buttonBorderShape(.circle)
                     .clipShape(Circle())
 
                     Button { engine.next() } label: {
                         Image(systemName: "forward.fill")
-                            .font(.callout)
-                            .frame(width: 34, height: 34)
+                            .font(.footnote)
+                            .frame(width: 28, height: 28)
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
 
                     Button { engine.cycleRepeat() } label: {
                         Image(systemName: engine.repeatMode == 2 ? "repeat.1" : "repeat")
-                            .font(.caption2)
-                            .foregroundStyle(engine.repeatMode > 0 ? theme.accentColor : .primary)
-                            .frame(width: 26, height: 26)
+                            .font(.system(size: 10))
+                            .foregroundStyle(engine.repeatMode > 0 ? theme.effectiveAccentColor : .primary)
+                            .frame(width: 22, height: 22)
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
@@ -139,6 +158,7 @@ struct PlayerBarView: View {
             }
         }
         .padding(.top, engine.currentTrack != nil ? 6 : 0)
+        .padding(.bottom, engine.currentTrack != nil ? 4 : 0)
         .frame(maxWidth: 400)
     }
 
@@ -159,13 +179,13 @@ struct PlayerBarView: View {
                         .frame(height: isSeekBarHovered ? 6 : 4)
 
                     Capsule()
-                        .fill(theme.accentColor)
+                        .fill(theme.effectiveAccentColor)
                         .frame(width: geo.size.width * progress, height: isSeekBarHovered ? 6 : 4)
 
                     if isSeekBarHovered {
                         Circle()
-                            .fill(theme.accentColor)
-                            .shadow(color: theme.accentColor.opacity(0.5), radius: 4)
+                            .fill(theme.effectiveAccentColor)
+                            .shadow(color: theme.effectiveAccentColor.opacity(0.5), radius: 4)
                             .frame(width: 12, height: 12)
                             .offset(x: geo.size.width * progress - 6)
                             .transition(.scale.combined(with: .opacity))
@@ -213,7 +233,7 @@ struct PlayerBarView: View {
                 ),
                 in: 0...100
             )
-            .tint(theme.accentColor)
+            .tint(theme.effectiveAccentColor)
             .frame(width: 100)
 
             Button {
@@ -224,7 +244,7 @@ struct PlayerBarView: View {
             } label: {
                 Image(systemName: "hifispeaker.and.appletv")
                     .font(.caption)
-                    .foregroundStyle(engine.activeDeviceId != nil ? theme.accentColor : .secondary)
+                    .foregroundStyle(engine.activeDeviceId != nil ? theme.effectiveAccentColor : .secondary)
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.glass)

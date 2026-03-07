@@ -66,6 +66,13 @@ struct MiniPlayerView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if case .external = engine.playbackMode,
+                   let deviceName = engine.activeDeviceName {
+                    Text("on \(deviceName)")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
             } else {
                 Text("Not Playing")
                     .font(.caption)
@@ -86,7 +93,7 @@ struct MiniPlayerView: View {
                         .frame(width: 32, height: 32)
                         .contentTransition(.symbolEffect(.replace.byLayer.downUp))
                         .glassEffect(
-                            .regular.tint(theme.accentColor),
+                            .regular.tint(theme.effectiveAccentColor),
                             in: .circle
                         )
                 }
