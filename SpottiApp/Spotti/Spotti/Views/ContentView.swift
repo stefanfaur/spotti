@@ -14,7 +14,10 @@ struct ContentView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
-        .background(VisualEffectBackground(material: theme.blurLevel.material))
+        .background {
+            VisualEffectBackground(material: theme.blurLevel.material)
+                .ignoresSafeArea()
+        }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: engine.isAuthenticated)
     }
 }

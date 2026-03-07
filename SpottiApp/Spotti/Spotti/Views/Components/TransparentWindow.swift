@@ -15,6 +15,7 @@ struct VisualEffectBackground: NSViewRepresentable {
             guard let window = view.window else { return }
             window.isOpaque = false
             window.backgroundColor = .clear
+            window.titlebarAppearsTransparent = true
         }
 
         return view
