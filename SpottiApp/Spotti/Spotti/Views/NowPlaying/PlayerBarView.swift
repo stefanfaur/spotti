@@ -68,28 +68,27 @@ struct PlayerBarView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    if case .external = engine.playbackMode,
+                       let deviceName = engine.activeDeviceName {
+                        HStack(spacing: 4) {
+                            Image(systemName: "hifispeaker.fill")
+                                .font(.system(size: 9))
+                            Text(deviceName)
+                                .font(.system(size: 10))
+                                .lineLimit(1)
+                            Button("Transfer") {
+                                showDevicePicker = true
+                                engine.fetchDevices()
+                            }
+                            .font(.system(size: 10))
+                            .buttonStyle(.plain)
+                            .foregroundStyle(theme.effectiveAccentColor)
+                        }
+                        .foregroundStyle(.secondary)
+                    }
                 }
                 .transition(.opacity.combined(with: .move(edge: .leading)))
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: track.id)
-
-                if case .external = engine.playbackMode,
-                   let deviceName = engine.activeDeviceName {
-                    HStack(spacing: 4) {
-                        Image(systemName: "hifispeaker.fill")
-                            .font(.system(size: 9))
-                        Text(deviceName)
-                            .font(.system(size: 10))
-                        Button("Transfer") {
-                            if let ours = engine.ourDeviceId {
-                                engine.transferPlayback(to: ours)
-                            }
-                        }
-                        .font(.system(size: 10))
-                        .buttonStyle(.plain)
-                        .foregroundStyle(theme.effectiveAccentColor)
-                    }
-                    .foregroundStyle(.secondary)
-                }
             } else {
                 Text("Not Playing")
                     .font(.callout)
