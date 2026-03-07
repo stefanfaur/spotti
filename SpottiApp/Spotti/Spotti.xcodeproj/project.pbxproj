@@ -11,6 +11,8 @@
 		8F1EA2BE2F5B7CB200E1DE2E /* CoreAudio.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F1EA2BD2F5B7CB200E1DE2E /* CoreAudio.framework */; };
 		8F1EA2C02F5B7CBC00E1DE2E /* AudioToolbox.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F1EA2BF2F5B7CBC00E1DE2E /* AudioToolbox.framework */; };
 		8F1EA2C22F5B7CC800E1DE2E /* MediaPlayer.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F1EA2C12F5B7CC800E1DE2E /* MediaPlayer.framework */; };
+		8F1EA2E42F5B92F500E1DE2E /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F1EA2E32F5B92F500E1DE2E /* AppIntents.framework */; };
+		8F1EA2E62F5B92FD00E1DE2E /* CoreSpotlight.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8F1EA2E52F5B92FD00E1DE2E /* CoreSpotlight.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,6 +21,8 @@
 		8F1EA2BD2F5B7CB200E1DE2E /* CoreAudio.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudio.framework; path = System/Library/Frameworks/CoreAudio.framework; sourceTree = SDKROOT; };
 		8F1EA2BF2F5B7CBC00E1DE2E /* AudioToolbox.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AudioToolbox.framework; path = System/Library/Frameworks/AudioToolbox.framework; sourceTree = SDKROOT; };
 		8F1EA2C12F5B7CC800E1DE2E /* MediaPlayer.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MediaPlayer.framework; path = System/Library/Frameworks/MediaPlayer.framework; sourceTree = SDKROOT; };
+		8F1EA2E32F5B92F500E1DE2E /* AppIntents.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AppIntents.framework; path = System/Library/Frameworks/AppIntents.framework; sourceTree = SDKROOT; };
+		8F1EA2E52F5B92FD00E1DE2E /* CoreSpotlight.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreSpotlight.framework; path = System/Library/Frameworks/CoreSpotlight.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,8 +38,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				8F1EA2E62F5B92FD00E1DE2E /* CoreSpotlight.framework in Frameworks */,
 				8F1EA2BE2F5B7CB200E1DE2E /* CoreAudio.framework in Frameworks */,
 				8F1EA2C22F5B7CC800E1DE2E /* MediaPlayer.framework in Frameworks */,
+				8F1EA2E42F5B92F500E1DE2E /* AppIntents.framework in Frameworks */,
 				8F1EA2BC2F5B7CA900E1DE2E /* Security.framework in Frameworks */,
 				8F1EA2C02F5B7CBC00E1DE2E /* AudioToolbox.framework in Frameworks */,
 			);
@@ -64,6 +70,8 @@
 		8F1EA2BA2F5B7CA900E1DE2E /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				8F1EA2E52F5B92FD00E1DE2E /* CoreSpotlight.framework */,
+				8F1EA2E32F5B92F500E1DE2E /* AppIntents.framework */,
 				8F1EA2C12F5B7CC800E1DE2E /* MediaPlayer.framework */,
 				8F1EA2BF2F5B7CBC00E1DE2E /* AudioToolbox.framework */,
 				8F1EA2BD2F5B7CB200E1DE2E /* CoreAudio.framework */,
