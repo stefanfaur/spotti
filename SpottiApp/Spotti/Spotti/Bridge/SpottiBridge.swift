@@ -116,20 +116,34 @@ class SpottiEngine: ObservableObject {
 
     func play() {
         guard let core = corePtr else { return }
-        Task { @MainActor in
-            isPlaying = true
-            startPositionTimer()
+        switch playbackMode {
+        case .local, .idle:
+            Task { @MainActor in
+                isPlaying = true
+                startPositionTimer()
+            }
+            spotti_play(core)
+        case .external:
+            Task { @MainActor in isPlaying = true }
+            spotti_web_play(core)
         }
-        spotti_play(core)
     }
 
     func pause() {
         guard let core = corePtr else { return }
-        Task { @MainActor in
-            isPlaying = false
-            stopPositionTimer()
+        switch playbackMode {
+        case .local, .idle:
+            Task { @MainActor in
+                isPlaying = false
+                stopPositionTimer()
+            }
+            spotti_pause(core)
+        case .external(let deviceId):
+            Task { @MainActor in isPlaying = false }
+            deviceId.withCString { ptr in
+                spotti_web_pause(core, ptr)
+            }
         }
-        spotti_pause(core)
     }
 
     func togglePlayPause() {
@@ -138,20 +152,36 @@ class SpottiEngine: ObservableObject {
 
     func next() {
         guard let core = corePtr else { return }
-        Task { @MainActor in isLoading = true }
-        spotti_next(core)
+        switch playbackMode {
+        case .local, .idle:
+            Task { @MainActor in isLoading = true }
+            spotti_next(core)
+        case .external:
+            spotti_web_next(core)
+        }
     }
 
     func previous() {
         guard let core = corePtr else { return }
-        Task { @MainActor in isLoading = true }
-        spotti_previous(core)
+        switch playbackMode {
+        case .local, .idle:
+            Task { @MainActor in isLoading = true }
+            spotti_previous(core)
+        case .external:
+            spotti_web_previous(core)
+        }
     }
 
     func seek(to positionMs: UInt32) {
         guard let core = corePtr else { return }
-        Task { @MainActor in self.positionMs = positionMs }
-        spotti_seek(core, positionMs)
+        switch playbackMode {
+        case .local, .idle:
+            Task { @MainActor in self.positionMs = positionMs }
+            spotti_seek(core, positionMs)
+        case .external:
+            Task { @MainActor in self.positionMs = positionMs }
+            spotti_web_seek(core, positionMs)
+        }
     }
 
     func loadTrack(uri: String) {
