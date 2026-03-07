@@ -26,6 +26,22 @@ enum BlurLevel: Int, CaseIterable, Hashable {
     }
 }
 
+enum GradientComplexity: Int, CaseIterable, Identifiable, Hashable {
+    case simple = 0
+    case medium = 1
+    case rich   = 2
+
+    var id: Int { rawValue }
+
+    var label: String {
+        switch self {
+        case .simple: "Simple"
+        case .medium: "Medium"
+        case .rich:   "Rich"
+        }
+    }
+}
+
 struct SettingsView: View {
     var body: some View {
         TabView {

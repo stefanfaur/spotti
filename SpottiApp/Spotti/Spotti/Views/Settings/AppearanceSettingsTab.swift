@@ -28,17 +28,6 @@ struct AppearanceSettingsTab: View {
             }
 
             Section("Glass") {
-                VStack(alignment: .leading) {
-                    HStack {
-                        Text("Glass tint opacity")
-                        Spacer()
-                        Text("\(Int(theme.glassTintOpacity * 100))%")
-                            .foregroundStyle(.secondary)
-                            .monospacedDigit()
-                    }
-                    Slider(value: $theme.glassTintOpacity, in: 0...0.5, step: 0.05)
-                }
-
                 Toggle("Adaptive color from album art", isOn: $theme.adaptiveColorEnabled)
             }
 

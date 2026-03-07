@@ -8,20 +8,19 @@ class ThemeEngine: ObservableObject {
     @Published var dominantColor: Color = Color(nsColor: ExtractedColors.default.dominant)
     @Published var accentColor: Color = Color(nsColor: ExtractedColors.default.accent)
 
-    var glassTint: Color {
-        dominantColor.opacity(glassTintOpacity)
-    }
-
-    var sidebarTint: Color {
-        dominantColor.opacity(0.12)
-    }
-
-    var playerBarTint: Color {
-        dominantColor.opacity(0.18)
-    }
-
-    @AppStorage("theme.glassTintOpacity") var glassTintOpacity: Double = 0.15
     @AppStorage("theme.blurLevel") var blurLevel: BlurLevel = .subtle
+
+    // MARK: - Glass Island Settings
+    @AppStorage("theme.glassCornerRadius")    var glassCornerRadius: Double = 16      // 8–24
+    @AppStorage("theme.glassSpacing")         var glassSpacing: Double = 8            // 2–16
+    @AppStorage("theme.sidebarTintOpacity")   var sidebarTintOpacity: Double = 0.25   // 0–0.5
+    @AppStorage("theme.playerBarTintOpacity") var playerBarTintOpacity: Double = 0.20 // 0–0.5
+    @AppStorage("theme.mainContentGlass")     var mainContentGlass: Bool = false
+
+    // MARK: - Background Gradient Settings
+    @AppStorage("theme.gradientIntensity")    var gradientIntensity: Double = 1.0     // 0.5–1.5
+    @AppStorage("theme.radialGlowStrength")   var radialGlowStrength: Double = 0.3    // 0–0.6
+    @AppStorage("theme.gradientComplexity")   var gradientComplexity: GradientComplexity = .medium
     @AppStorage("theme.adaptiveColor") var adaptiveColorEnabled: Bool = true {
         didSet {
             if !adaptiveColorEnabled {
