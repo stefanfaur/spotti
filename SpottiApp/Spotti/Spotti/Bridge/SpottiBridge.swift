@@ -422,7 +422,9 @@ class SpottiEngine: ObservableObject {
                 lastError = msg
                 if msg.hasPrefix("Device transfer failed") {
                     // Transfer target gone (e.g. Spotify closed) — reset to idle and
-                    // retry any pending playback locally via librespot.
+                    // retry any pending playback locally via librespot. Don't surface
+                    // this as a user-visible error since we recover automatically.
+                    lastError = nil
                     playbackMode = .idle
                     activeDeviceName = nil
                     if let uri = pendingUri {
