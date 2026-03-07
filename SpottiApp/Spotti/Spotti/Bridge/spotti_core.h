@@ -150,9 +150,8 @@ void spotti_web_play(struct SpottiCore *core);
 
 /**
  * Pause playback on active device via Web API.
- * device_id: null-terminated C string (reserved for future use; currently targets active device).
  */
-void spotti_web_pause(struct SpottiCore *core, const char *device_id);
+void spotti_web_pause(struct SpottiCore *core);
 
 /**
  * Skip to next track on active device via Web API.

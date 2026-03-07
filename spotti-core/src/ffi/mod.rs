@@ -25,6 +25,7 @@ pub struct SpottiCore {
     event_callback: Option<SpottiEventCallback>,
     art_cache: Option<ArtCache>,
     sync_task: Option<tokio::task::JoinHandle<()>>,
+    sync_running: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Helper to emit an event directly via FFI callback (outside the crossbeam channel path).
@@ -58,6 +59,7 @@ pub extern "C" fn spotti_core_create(client_id: *const c_char) -> *mut SpottiCor
         event_callback: None,
         art_cache: None,
         sync_task: None,
+        sync_running: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
     Box::into_raw(Box::new(core))
 }
@@ -614,8 +616,12 @@ pub extern "C" fn spotti_start_playback_sync(core: *mut SpottiCore) {
 
     // Cancel any existing sync task
     if let Some(handle) = core.sync_task.take() {
+        core.sync_running.store(false, std::sync::atomic::Ordering::SeqCst);
         handle.abort();
     }
+
+    let running = core.sync_running.clone();
+    running.store(true, std::sync::atomic::Ordering::SeqCst);
 
     let client = match core.auth.as_ref().and_then(|a| a.rspotify()).cloned() {
         Some(c) => c,
@@ -633,6 +639,9 @@ pub extern "C" fn spotti_start_playback_sync(core: *mut SpottiCore) {
 
     let handle = get_runtime().spawn(async move {
         loop {
+            if !running.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
             match crate::spotify::playback_sync::fetch_current_playback(&client).await {
                 Ok(state_opt) => {
                     let event = match state_opt {
@@ -680,6 +689,7 @@ pub extern "C" fn spotti_start_playback_sync(core: *mut SpottiCore) {
 #[no_mangle]
 pub extern "C" fn spotti_stop_playback_sync(core: *mut SpottiCore) {
     let core = unsafe { &mut *core };
+    core.sync_running.store(false, std::sync::atomic::Ordering::SeqCst);
     if let Some(handle) = core.sync_task.take() {
         handle.abort();
     }
@@ -707,7 +717,7 @@ pub unsafe extern "C" fn spotti_web_play(core: *mut SpottiCore) {
 
 /// Pause playback on the currently active device via Web API.
 #[no_mangle]
-pub unsafe extern "C" fn spotti_web_pause(core: *mut SpottiCore, _device_id: *const c_char) {
+pub unsafe extern "C" fn spotti_web_pause(core: *mut SpottiCore) {
     let core = &*core;
     if let Some(auth) = &core.auth {
         if let Some(client) = auth.rspotify() {

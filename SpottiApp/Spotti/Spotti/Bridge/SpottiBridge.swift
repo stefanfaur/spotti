@@ -143,11 +143,9 @@ class SpottiEngine: ObservableObject {
                 stopPositionTimer()
             }
             spotti_pause(core)
-        case .external(let deviceId):
+        case .external:
             Task { @MainActor in isPlaying = false }
-            deviceId.withCString { ptr in
-                spotti_web_pause(core, ptr)
-            }
+            spotti_web_pause(core)
         }
     }
 
