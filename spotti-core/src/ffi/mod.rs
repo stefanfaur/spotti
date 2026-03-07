@@ -707,7 +707,7 @@ pub unsafe extern "C" fn spotti_web_play(core: *mut SpottiCore) {
 
 /// Pause playback on the currently active device via Web API.
 #[no_mangle]
-pub unsafe extern "C" fn spotti_web_pause(core: *mut SpottiCore) {
+pub unsafe extern "C" fn spotti_web_pause(core: *mut SpottiCore, _device_id: *const c_char) {
     let core = &*core;
     if let Some(auth) = &core.auth {
         if let Some(client) = auth.rspotify() {
