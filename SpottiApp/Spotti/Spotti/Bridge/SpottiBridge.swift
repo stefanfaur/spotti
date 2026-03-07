@@ -563,6 +563,7 @@ class SpottiEngine: ObservableObject {
 
     private func decodeTrack(from obj: Any?) {
         guard let trackDict = obj,
+              !(trackDict is NSNull),
               let trackData = try? JSONSerialization.data(withJSONObject: trackDict),
               let track = try? JSONDecoder().decode(SpottiTrackInfo.self, from: trackData)
         else { return }
