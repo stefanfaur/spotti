@@ -17,6 +17,7 @@ pub fn track_to_summary(track: &FullTrack) -> TrackSummary {
         duration_ms: track.duration.num_milliseconds() as u32,
         image_url: track.album.images.first().map(|img| img.url.clone()),
         track_number: Some(track.track_number),
+        is_playable: track.is_playable.unwrap_or(true),
     }
 }
 
@@ -38,6 +39,7 @@ pub fn simplified_track_to_summary(
         duration_ms: track.duration.num_milliseconds() as u32,
         image_url: image_url.map(|s| s.to_string()),
         track_number: Some(track.track_number),
+        is_playable: track.is_playable.unwrap_or(true),
     }
 }
 

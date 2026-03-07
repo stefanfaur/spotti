@@ -40,6 +40,7 @@ pub struct TrackSummary {
     pub duration_ms: u32,
     pub image_url: Option<String>,
     pub track_number: Option<u32>,
+    pub is_playable: bool,
 }
 
 /// Full playlist detail (header + tracks)
