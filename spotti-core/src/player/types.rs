@@ -11,6 +11,7 @@ pub enum RepeatMode {
 pub enum PlayerCommand {
     Play,
     Pause,
+    Toggle,
     Stop,
     Next,
     Previous,
@@ -20,6 +21,9 @@ pub enum PlayerCommand {
     SetVolume(u16), // 0-65535 range, mapped from 0-100 at FFI layer
     SetShuffle(bool),
     SetRepeat(RepeatMode),
+    /// Change audio bitrate: 0 = 96kbps, 1 = 160kbps, 2 = 320kbps.
+    /// Takes effect on next track load.
+    SetBitrate(u32),
 }
 
 /// Track metadata sent to the UI via events.
@@ -56,4 +60,16 @@ pub enum PlayerEvent {
     ArtCached { id: String, path: String },
     DeviceList { devices_json: String },
     DeviceTransferred { device_id: String },
+    CacheInfo { size_bytes: u64, item_count: u32 },
+    CacheCleared,
+    PlaybackSynced {
+        track: Option<TrackInfo>,   // None = nothing playing anywhere
+        is_playing: bool,
+        position_ms: u32,
+        device_id: Option<String>,
+        device_name: Option<String>,
+        shuffle: bool,
+        repeat: RepeatMode,
+        is_our_device: bool,
+    },
 }
