@@ -35,10 +35,13 @@ struct MainContentView: View {
                     LibraryView()
                 case .playlistDetail(let id):
                     PlaylistDetailView(playlistId: id)
+                        .id(id)
                 case .albumDetail(let id):
                     AlbumDetailView(albumId: id)
+                        .id(id)
                 case .artistDetail(let id):
                     ArtistDetailView(artistId: id)
+                        .id(id)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
