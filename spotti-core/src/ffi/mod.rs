@@ -23,6 +23,7 @@ pub struct SpottiCore {
     cmd_tx: Option<mpsc::Sender<PlayerCommand>>,
     event_callback: Option<SpottiEventCallback>,
     art_cache: Option<ArtCache>,
+    sync_task: Option<tokio::task::JoinHandle<()>>,
 }
 
 /// Helper to emit an event directly via FFI callback (outside the crossbeam channel path).
@@ -55,6 +56,7 @@ pub extern "C" fn spotti_core_create(client_id: *const c_char) -> *mut SpottiCor
         cmd_tx: None,
         event_callback: None,
         art_cache: None,
+        sync_task: None,
     };
     Box::into_raw(Box::new(core))
 }
@@ -128,7 +130,7 @@ pub extern "C" fn spotti_player_init(core: *mut SpottiCore) -> i32 {
         let cmd = match action {
             MediaControlAction::Play => PlayerCommand::Play,
             MediaControlAction::Pause => PlayerCommand::Pause,
-            MediaControlAction::Toggle => PlayerCommand::Play,
+            MediaControlAction::Toggle => PlayerCommand::Toggle,
             MediaControlAction::Next => PlayerCommand::Next,
             MediaControlAction::Previous => PlayerCommand::Previous,
             MediaControlAction::Stop => PlayerCommand::Stop,
@@ -238,6 +240,15 @@ pub extern "C" fn spotti_load_context(
             index: index as usize,
         });
     }
+}
+
+// ── Bitrate ──
+
+/// Set audio quality. 0 = Low (96kbps), 1 = Normal (160kbps), 2 = High (320kbps).
+/// Takes effect on next track load.
+#[no_mangle]
+pub extern "C" fn spotti_set_bitrate(core: *mut SpottiCore, level: u32) {
+    send_cmd(core, PlayerCommand::SetBitrate(level));
 }
 
 // ── Volume, Shuffle, Repeat ──
@@ -519,6 +530,157 @@ pub unsafe extern "C" fn spotti_transfer_playback(
                 }
             });
         }
+    }
+}
+
+// ── Account ──
+
+/// Get the authenticated username. Returns a C string that must be freed with `spotti_free_string`.
+/// Returns null if not authenticated.
+#[no_mangle]
+pub extern "C" fn spotti_get_username(core: *mut SpottiCore) -> *mut c_char {
+    let core = unsafe { &*core };
+    match core.auth.as_ref().and_then(|a| a.username()) {
+        Some(name) => match CString::new(name) {
+            Ok(c_str) => c_str.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// Get our librespot device ID. Returns a C string freed with `spotti_free_string`.
+/// Returns null if not authenticated.
+#[no_mangle]
+pub extern "C" fn spotti_get_device_id(core: *mut SpottiCore) -> *mut c_char {
+    let core = unsafe { &*core };
+    match core.auth.as_ref().and_then(|a| a.session()).map(|s| s.device_id().to_string()) {
+        Some(id) => match CString::new(id) {
+            Ok(c_str) => c_str.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        None => std::ptr::null_mut(),
+    }
+}
+
+/// Free a string returned by spotti_get_username.
+#[no_mangle]
+pub extern "C" fn spotti_free_string(ptr: *mut c_char) {
+    if !ptr.is_null() {
+        unsafe {
+            drop(CString::from_raw(ptr));
+        }
+    }
+}
+
+// ── Cache Info ──
+
+/// Query art cache size. Result arrives via CacheInfo event.
+#[no_mangle]
+pub extern "C" fn spotti_cache_info(core: *mut SpottiCore) {
+    let core = unsafe { &*core };
+    if let Some(ref cache) = core.art_cache {
+        let size_bytes = cache.cache_size_bytes();
+        let item_count = cache.item_count() as u32;
+        unsafe {
+            emit_event(
+                core.event_callback,
+                &PlayerEvent::CacheInfo { size_bytes, item_count },
+            );
+        }
+    }
+}
+
+/// Clear all cached art. Emits CacheCleared event when done.
+#[no_mangle]
+pub extern "C" fn spotti_clear_cache(core: *mut SpottiCore) {
+    let core = unsafe { &*core };
+    if let Some(ref cache) = core.art_cache {
+        let _ = cache.clear();
+        unsafe {
+            emit_event(core.event_callback, &PlayerEvent::CacheCleared);
+        }
+    }
+}
+
+// ── Playback Sync ──
+
+/// Start background playback sync. Polls Spotify Web API every 5s.
+/// Emits PlaybackSynced events. Safe to call multiple times (cancels previous task).
+#[no_mangle]
+pub extern "C" fn spotti_start_playback_sync(core: *mut SpottiCore) {
+    let core = unsafe { &mut *core };
+
+    // Cancel any existing sync task
+    if let Some(handle) = core.sync_task.take() {
+        handle.abort();
+    }
+
+    let client = match core.auth.as_ref().and_then(|a| a.rspotify()).cloned() {
+        Some(c) => c,
+        None => {
+            log::warn!("Cannot start sync: not authenticated");
+            return;
+        }
+    };
+
+    let our_device_id: Option<String> = core.auth.as_ref()
+        .and_then(|a| a.session())
+        .map(|s| s.device_id().to_string());
+
+    let event_cb = core.event_callback;
+
+    let handle = get_runtime().spawn(async move {
+        loop {
+            match crate::spotify::playback_sync::fetch_current_playback(&client).await {
+                Ok(state_opt) => {
+                    let event = match state_opt {
+                        Some(state) => {
+                            let is_our = state.device_id.as_deref()
+                                .zip(our_device_id.as_deref())
+                                .map(|(did, ours)| did == ours)
+                                .unwrap_or(false);
+                            PlayerEvent::PlaybackSynced {
+                                track: state.track,
+                                is_playing: state.is_playing,
+                                position_ms: state.position_ms,
+                                device_id: state.device_id,
+                                device_name: state.device_name,
+                                shuffle: state.shuffle,
+                                repeat: state.repeat,
+                                is_our_device: is_our,
+                            }
+                        }
+                        None => PlayerEvent::PlaybackSynced {
+                            track: None,
+                            is_playing: false,
+                            position_ms: 0,
+                            device_id: None,
+                            device_name: None,
+                            shuffle: false,
+                            repeat: crate::player::types::RepeatMode::Off,
+                            is_our_device: false,
+                        },
+                    };
+                    unsafe { emit_event(event_cb, &event) };
+                }
+                Err(e) => {
+                    log::warn!("Playback sync error: {e}");
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
+    });
+
+    core.sync_task = Some(handle);
+}
+
+/// Stop background playback sync.
+#[no_mangle]
+pub extern "C" fn spotti_stop_playback_sync(core: *mut SpottiCore) {
+    let core = unsafe { &mut *core };
+    if let Some(handle) = core.sync_task.take() {
+        handle.abort();
     }
 }
 
