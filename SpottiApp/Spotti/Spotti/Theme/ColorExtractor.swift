@@ -2,6 +2,20 @@ import AppKit
 import Foundation
 
 extension NSColor {
+    /// Returns a copy of the color with brightness adjusted to ensure legibility
+    /// against typical dark (≥0.70) or light (≤0.45) backgrounds.
+    func adapted(for appearance: NSAppearance) -> NSColor {
+        let isDark = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        guard let srgb = usingColorSpace(.sRGB) else { return self }
+        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        srgb.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
+        if isDark {
+            return NSColor(hue: h, saturation: min(s, 0.85), brightness: max(b, 0.70), alpha: a)
+        } else {
+            return NSColor(hue: h, saturation: min(s + 0.1, 1.0), brightness: min(b, 0.45), alpha: a)
+        }
+    }
+
     convenience init?(hex: String) {
         var hexSanitized = hex.trimmingCharacters(in: .whitespacesAndNewlines)
         hexSanitized = hexSanitized.hasPrefix("#") ? String(hexSanitized.dropFirst()) : hexSanitized

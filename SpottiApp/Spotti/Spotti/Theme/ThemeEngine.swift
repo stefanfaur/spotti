@@ -34,7 +34,7 @@ class ThemeEngine: ObservableObject {
     var effectiveAccentColor: Color {
         let hex = AppSettings.shared.fixedAccentHex
         if !hex.isEmpty, let nsColor = NSColor(hex: hex) {
-            return Color(nsColor: nsColor)
+            return Color(nsColor: nsColor.adapted(for: NSApp.effectiveAppearance))
         }
         return accentColor
     }
@@ -50,8 +50,14 @@ class ThemeEngine: ObservableObject {
 
     private var currentColors: ExtractedColors = .default
     private var lastExtractedTrackId: String?
+    private var appearanceObserver: NSKeyValueObservation?
 
-    private init() {}
+    private init() {
+        appearanceObserver = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            guard let self else { return }
+            self.applyColors(self.currentColors, force: true)
+        }
+    }
 
     func updateColors(for track: SpottiTrackInfo) {
         guard adaptiveColorEnabled else { return }
@@ -86,13 +92,14 @@ class ThemeEngine: ObservableObject {
         applyColors(.default)
     }
 
-    private func applyColors(_ colors: ExtractedColors) {
-        guard colors != currentColors else { return }
+    private func applyColors(_ colors: ExtractedColors, force: Bool = false) {
+        guard force || colors != currentColors else { return }
         currentColors = colors
 
+        let adapted = colors.accent.adapted(for: NSApp.effectiveAppearance)
         withAnimation(.spring(response: colorTransitionDuration, dampingFraction: 0.85)) {
             dominantColor = Color(nsColor: colors.dominant)
-            accentColor = Color(nsColor: colors.accent)
+            accentColor = Color(nsColor: adapted)
         }
     }
 }
