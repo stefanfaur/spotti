@@ -31,6 +31,7 @@ pub struct PlayerEngine {
     original_queue: Vec<String>,
     now_playing_tx: Option<std_mpsc::Sender<NowPlayingCommand>>,
     bitrate: Bitrate,
+    consecutive_load_failures: u32,
 }
 
 impl PlayerEngine {
@@ -77,6 +78,7 @@ impl PlayerEngine {
             original_queue: Vec::new(),
             now_playing_tx,
             bitrate: Bitrate::Bitrate320,
+            consecutive_load_failures: 0,
         })
     }
 
@@ -263,6 +265,7 @@ impl PlayerEngine {
         match event {
             LibrespotEvent::Playing { position_ms, .. } => {
                 self.is_playing = true;
+                self.consecutive_load_failures = 0;
                 if let Some(ref track) = self.current_track {
                     let _ = self.event_tx.send(PlayerEvent::Playing {
                         track: track.clone(),
@@ -291,6 +294,7 @@ impl PlayerEngine {
                 self.update_now_playing(NowPlayingCommand::SetStopped);
             }
             LibrespotEvent::TrackChanged { audio_item } => {
+                self.consecutive_load_failures = 0;
                 let track_info = track_info_from_audio_item(&audio_item);
                 self.current_track = Some(track_info.clone());
                 let _ = self.event_tx.send(PlayerEvent::TrackChanged { track: track_info.clone() });
@@ -340,9 +344,22 @@ impl PlayerEngine {
                 // not a preloaded track that failed in the background.
                 let is_current = current_uri.ends_with(&failed_id);
                 if is_current {
+                    self.consecutive_load_failures += 1;
                     let _ = self.event_tx.send(PlayerEvent::Error {
                         message: format!("Track unavailable: {}", current_uri),
                     });
+
+                    if self.consecutive_load_failures >= 3 {
+                        log::error!(
+                            "Session lost: {} consecutive track load failures",
+                            self.consecutive_load_failures
+                        );
+                        let _ = self.event_tx.send(PlayerEvent::SessionLost {
+                            message: "Multiple consecutive track load failures — session may have expired".to_string(),
+                        });
+                        self.is_playing = false;
+                        return;
+                    }
                     self.advance_after_error();
                 } else {
                     log::info!("Ignoring unavailable preload for {}, current is {}", failed_id, current_uri);

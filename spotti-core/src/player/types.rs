@@ -63,6 +63,7 @@ pub enum PlayerEvent {
     DeviceTransferred { device_id: String },
     CacheInfo { size_bytes: u64, item_count: u32 },
     CacheCleared,
+    SessionLost { message: String },
     PlaybackSynced {
         track: Option<TrackInfo>,   // None = nothing playing anywhere
         is_playing: bool,

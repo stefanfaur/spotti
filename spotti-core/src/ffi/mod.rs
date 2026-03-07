@@ -695,6 +695,47 @@ pub extern "C" fn spotti_stop_playback_sync(core: *mut SpottiCore) {
     }
 }
 
+// ── Session Reconnection ──
+
+/// Reconnect after session loss. Drops old player, re-authenticates with
+/// cached credentials, and reinitializes the player + playback sync.
+/// Returns 0 on success, -1 on failure.
+#[no_mangle]
+pub extern "C" fn spotti_reconnect(core: *mut SpottiCore) -> i32 {
+    {
+        let core = unsafe { &mut *core };
+
+        // Stop playback sync
+        core.sync_running.store(false, std::sync::atomic::Ordering::SeqCst);
+        if let Some(handle) = core.sync_task.take() {
+            handle.abort();
+        }
+
+        // Drop old command channel — kills old PlayerEngine run loop
+        core.cmd_tx = None;
+
+        // Re-authenticate with cached credentials
+        let mut auth = AuthManager::new(core.client_id.clone());
+        match get_runtime().block_on(auth.authenticate()) {
+            Ok(()) => {
+                log::info!("Session reconnected successfully");
+                core.auth = Some(auth);
+            }
+            Err(e) => {
+                log::error!("Reconnection failed: {}", e);
+                return -1;
+            }
+        }
+    }
+    // Mutable borrow dropped — safe to call FFI functions with raw pointer
+
+    let result = spotti_player_init(core);
+    if result == 0 {
+        spotti_start_playback_sync(core);
+    }
+    result
+}
+
 // ── Web API Playback Control ──
 // These functions control playback on the currently active Spotify device
 // via the Web API. Used when in external/passive mode.

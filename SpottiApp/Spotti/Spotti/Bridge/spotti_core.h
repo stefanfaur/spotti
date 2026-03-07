@@ -165,6 +165,13 @@ void spotti_start_playback_sync(struct SpottiCore *core);
 void spotti_stop_playback_sync(struct SpottiCore *core);
 
 /**
+ * Reconnect after session loss. Drops old player, re-authenticates with
+ * cached credentials, and reinitializes the player + playback sync.
+ * Returns 0 on success, -1 on failure.
+ */
+int32_t spotti_reconnect(struct SpottiCore *core);
+
+/**
  * Resume playback on the currently active device via Web API.
  */
 void spotti_web_play(struct SpottiCore *core);

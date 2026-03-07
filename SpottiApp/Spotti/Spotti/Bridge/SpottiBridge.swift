@@ -421,6 +421,26 @@ class SpottiEngine: ObservableObject {
             isPlaying = false
             stopPositionTimer()
 
+        case "SessionLost":
+            isLoading = false
+            isPlaying = false
+            stopPositionTimer()
+            let msg = dict["message"] as? String ?? "Session lost"
+            print("[Spotti] SessionLost: \(msg) — attempting reconnect")
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let core = self?.corePtr else { return }
+                let result = spotti_reconnect(core)
+                DispatchQueue.main.async {
+                    if result == 0 {
+                        print("[Spotti] Reconnected successfully")
+                        self?.lastError = nil
+                    } else {
+                        self?.lastError = "Session expired. Please restart the app."
+                        self?.isAuthenticated = false
+                    }
+                }
+            }
+
         case "Error":
             isLoading = false
             if let msg = dict["message"] as? String {
