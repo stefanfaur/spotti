@@ -87,9 +87,9 @@ struct MainLayout: View {
             ZStack {
                 LinearGradient(
                     colors: [
-                        theme.dominantColor.opacity(0.45),
-                        theme.effectiveAccentColor.opacity(0.25),
-                        theme.dominantColor.opacity(0.15)
+                        theme.dominantColor.opacity(0.45 * theme.gradientIntensity),
+                        theme.effectiveAccentColor.opacity(0.25 * theme.gradientIntensity),
+                        theme.dominantColor.opacity(0.15 * theme.gradientIntensity)
                     ],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
@@ -98,40 +98,67 @@ struct MainLayout: View {
                 // Secondary radial glow for more depth in the refraction
                 RadialGradient(
                     colors: [
-                        theme.effectiveAccentColor.opacity(0.3),
+                        theme.effectiveAccentColor.opacity(theme.radialGlowStrength),
                         .clear
                     ],
                     center: .bottomTrailing,
                     startRadius: 50,
                     endRadius: 400
                 )
+
+                if theme.gradientComplexity == .rich {
+                    RadialGradient(
+                        colors: [
+                            theme.effectiveAccentColor.opacity(0.2 * theme.gradientIntensity),
+                            .clear
+                        ],
+                        center: .topTrailing,
+                        startRadius: 30,
+                        endRadius: 300
+                    )
+                }
             }
             .ignoresSafeArea()
 
-            VStack(spacing: 8) {
-                HStack(spacing: 8) {
-                    SidebarView()
-                        .frame(width: 240)
-                        .clipShape(.rect(cornerRadius: 16))
+            GlassEffectContainer(spacing: theme.glassSpacing) {
+                VStack(spacing: theme.glassSpacing) {
+                    HStack(spacing: theme.glassSpacing) {
+                        SidebarView()
+                            .frame(width: 240)
+                            .clipShape(.rect(cornerRadius: theme.glassCornerRadius))
+                            .glassEffect(
+                                .regular.tint(theme.dominantColor.opacity(theme.sidebarTintOpacity)),
+                                in: .rect(cornerRadius: theme.glassCornerRadius)
+                            )
+
+                        Group {
+                            if theme.mainContentGlass {
+                                MainContentView()
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .clipShape(.rect(cornerRadius: theme.glassCornerRadius))
+                                    .glassEffect(
+                                        .regular.tint(theme.dominantColor.opacity(theme.sidebarTintOpacity)),
+                                        in: .rect(cornerRadius: theme.glassCornerRadius)
+                                    )
+                            } else {
+                                MainContentView()
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                                    .clipShape(.rect(cornerRadius: theme.glassCornerRadius))
+                            }
+                        }
+                    }
+
+                    PlayerBarView(showNowPlaying: $showNowPlaying)
+                        .frame(height: 80)
+                        .clipShape(.rect(cornerRadius: theme.glassCornerRadius))
                         .glassEffect(
-                            .regular.tint(theme.dominantColor.opacity(0.25)),
-                            in: .rect(cornerRadius: 16)
+                            .regular.tint(theme.dominantColor.opacity(theme.playerBarTintOpacity)),
+                            in: .rect(cornerRadius: theme.glassCornerRadius)
                         )
-
-                    MainContentView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipShape(.rect(cornerRadius: 16))
                 }
-
-                PlayerBarView(showNowPlaying: $showNowPlaying)
-                    .frame(height: 80)
-                    .clipShape(.rect(cornerRadius: 16))
-                    .glassEffect(
-                        .regular.tint(theme.dominantColor.opacity(0.2)),
-                        in: .rect(cornerRadius: 16)
-                    )
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
             }
-            .padding(8)
 
             if showNowPlaying {
                 NowPlayingFullView(showNowPlaying: $showNowPlaying)
