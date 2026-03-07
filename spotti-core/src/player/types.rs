@@ -24,6 +24,8 @@ pub enum PlayerCommand {
     /// Change audio bitrate: 0 = 96kbps, 1 = 160kbps, 2 = 320kbps.
     /// Takes effect on next track load.
     SetBitrate(u32),
+    /// Gracefully stop playback and exit the run loop.
+    Shutdown,
 }
 
 /// Track metadata sent to the UI via events.

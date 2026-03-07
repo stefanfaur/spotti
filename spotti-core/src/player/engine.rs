@@ -102,15 +102,21 @@ impl PlayerEngine {
                 }
                 cmd = self.cmd_rx.recv() => {
                     match cmd {
-                        Some(cmd) => self.handle_command(cmd),
+                        Some(cmd) => {
+                            let should_exit = self.handle_command(cmd);
+                            if should_exit { break; }
+                        }
                         None => break,
                     }
                 }
             }
         }
+        // Ensure audio is stopped when exiting the run loop for any reason
+        self.player.stop();
     }
 
-    fn handle_command(&mut self, cmd: PlayerCommand) {
+    /// Returns true if the run loop should exit.
+    fn handle_command(&mut self, cmd: PlayerCommand) -> bool {
         match cmd {
             PlayerCommand::Play => {
                 self.is_playing = true;
@@ -148,11 +154,13 @@ impl PlayerEngine {
                 }
             }
             PlayerCommand::LoadTrack { uri, start_playing } => {
+                self.consecutive_load_failures = 0;
                 self.queue = vec![uri];
                 self.queue_index = 0;
                 self.load_current_track(start_playing);
             }
             PlayerCommand::LoadContext { uris, index } => {
+                self.consecutive_load_failures = 0;
                 self.queue = uris;
                 self.queue_index = index;
                 self.load_current_track(true);
@@ -204,10 +212,15 @@ impl PlayerEngine {
                     1 => Bitrate::Bitrate160,
                     _ => Bitrate::Bitrate320,
                 };
-                // Bitrate change takes effect on next track load.
-                // librespot's Player doesn't support mid-stream bitrate changes.
+            }
+            PlayerCommand::Shutdown => {
+                log::info!("PlayerEngine shutting down");
+                self.player.stop();
+                self.is_playing = false;
+                return true;
             }
         }
+        false
     }
 
     fn load_current_track(&mut self, start_playing: bool) {
@@ -248,6 +261,11 @@ impl PlayerEngine {
 
     /// Advance the queue after a track fails to load, matching librespot's auto-skip behavior.
     fn advance_after_error(&mut self) {
+        // Don't cascade: if we're already hitting consecutive failures, stop trying.
+        if self.consecutive_load_failures > 2 {
+            log::warn!("Stopping auto-advance: {} consecutive failures", self.consecutive_load_failures);
+            return;
+        }
         match self.repeat {
             RepeatMode::Track => {
                 // Don't retry the same broken track in a loop
@@ -378,6 +396,10 @@ impl PlayerEngine {
                 self.update_now_playing(NowPlayingCommand::UpdatePosition {
                     position_ms: position_ms as u32,
                 });
+            }
+            LibrespotEvent::Loading { .. } => {
+                // Librespot is loading a track. We already emit our own Loading event
+                // from load_current_track, so we don't duplicate it here.
             }
             other => {
                 log::debug!("Unhandled librespot event: {:?}", other);

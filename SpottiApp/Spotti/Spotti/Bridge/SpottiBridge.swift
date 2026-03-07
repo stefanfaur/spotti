@@ -70,6 +70,9 @@ class SpottiEngine: ObservableObject {
         let index: UInt32
     }
     private var pendingContext: PendingContext?
+    /// Tracks the last queue/track we sent to Rust, for reconnect recovery.
+    private var lastLoadedContext: PendingContext?
+    private var lastLoadedUri: String?
 
     private init() {}
 
@@ -124,13 +127,8 @@ class SpottiEngine: ObservableObject {
         guard let core = corePtr else { return }
         switch playbackMode {
         case .local, .idle:
-            Task { @MainActor in
-                isPlaying = true
-                startPositionTimer()
-            }
             spotti_play(core)
         case .external:
-            Task { @MainActor in isPlaying = true }
             spotti_web_play(core)
         }
     }
@@ -139,13 +137,8 @@ class SpottiEngine: ObservableObject {
         guard let core = corePtr else { return }
         switch playbackMode {
         case .local, .idle:
-            Task { @MainActor in
-                isPlaying = false
-                stopPositionTimer()
-            }
             spotti_pause(core)
         case .external:
-            Task { @MainActor in isPlaying = false }
             spotti_web_pause(core)
         }
     }
@@ -158,7 +151,6 @@ class SpottiEngine: ObservableObject {
         guard let core = corePtr else { return }
         switch playbackMode {
         case .local, .idle:
-            Task { @MainActor in isLoading = true }
             spotti_next(core)
         case .external:
             spotti_web_next(core)
@@ -169,7 +161,6 @@ class SpottiEngine: ObservableObject {
         guard let core = corePtr else { return }
         switch playbackMode {
         case .local, .idle:
-            Task { @MainActor in isLoading = true }
             spotti_previous(core)
         case .external:
             spotti_web_previous(core)
@@ -193,17 +184,16 @@ class SpottiEngine: ObservableObject {
 
         if case .external = playbackMode, let ours = ourDeviceId {
             pendingUri = uri
-            Task { @MainActor in isLoading = true }
+            isLoading = true
             ours.withCString { ptr in
                 spotti_transfer_playback(core, ptr, true)
             }
             return
         }
 
-        Task { @MainActor in
-            isLoading = true
-            isPlaying = true
-        }
+        isLoading = true
+        lastLoadedUri = uri
+        lastLoadedContext = nil
         uri.withCString { ptr in
             spotti_load_track(core, ptr)
         }
@@ -217,17 +207,16 @@ class SpottiEngine: ObservableObject {
 
             if case .external = playbackMode, let ours = ourDeviceId {
                 pendingContext = PendingContext(uris: uris, index: index)
-                Task { @MainActor in isLoading = true }
+                isLoading = true
                 ours.withCString { ptr in
                     spotti_transfer_playback(core, ptr, false)
                 }
                 return
             }
 
-            Task { @MainActor in
-                isLoading = true
-                isPlaying = true
-            }
+            isLoading = true
+            lastLoadedContext = PendingContext(uris: uris, index: index)
+            lastLoadedUri = nil
             jsonString.withCString { ptr in
                 spotti_load_context(core, ptr, index)
             }
@@ -383,6 +372,7 @@ class SpottiEngine: ObservableObject {
 
         case "Paused":
             isPlaying = false
+            isLoading = false
             if let pos = dict["position_ms"] as? Int {
                 positionMs = UInt32(pos)
             }
@@ -427,6 +417,9 @@ class SpottiEngine: ObservableObject {
             stopPositionTimer()
             let msg = dict["message"] as? String ?? "Session lost"
             print("[Spotti] SessionLost: \(msg) — attempting reconnect")
+            // Capture what we need to restore after reconnect
+            let restoreUri = lastLoadedUri
+            let restoreContext = lastLoadedContext
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let core = self?.corePtr else { return }
                 let result = spotti_reconnect(core)
@@ -434,6 +427,12 @@ class SpottiEngine: ObservableObject {
                     if result == 0 {
                         print("[Spotti] Reconnected successfully")
                         self?.lastError = nil
+                        // Restore playback on the new engine
+                        if let ctx = restoreContext {
+                            self?.loadContext(uris: ctx.uris, index: ctx.index)
+                        } else if let uri = restoreUri {
+                            self?.loadTrack(uri: uri)
+                        }
                     } else {
                         self?.lastError = "Session expired. Please restart the app."
                         self?.isAuthenticated = false

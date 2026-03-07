@@ -711,7 +711,13 @@ pub extern "C" fn spotti_reconnect(core: *mut SpottiCore) -> i32 {
             handle.abort();
         }
 
-        // Drop old command channel — kills old PlayerEngine run loop
+        // Gracefully shut down the old player engine before dropping the channel.
+        // This ensures the librespot Player calls stop() and releases audio resources.
+        if let Some(ref tx) = core.cmd_tx {
+            let _ = tx.blocking_send(PlayerCommand::Shutdown);
+            // Give the engine a moment to process Shutdown and stop audio output
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
         core.cmd_tx = None;
 
         // Re-authenticate with cached credentials
