@@ -1,5 +1,6 @@
 use rspotify::clients::OAuthClient;
 use rspotify::model::{PlayableItem, RepeatState};
+use rspotify::prelude::Id;
 use rspotify::AuthCodePkceSpotify;
 
 use crate::player::types::{RepeatMode, TrackInfo};
@@ -21,14 +22,19 @@ pub async fn fetch_current_playback(
 
     Ok(ctx.map(|c| {
         let track = match c.item {
-            Some(PlayableItem::Track(t)) => Some(TrackInfo {
-                id: t.id.as_ref().map(|id| id.to_string()).unwrap_or_default(),
-                title: t.name,
-                artist: t.artists.first().map(|a| a.name.clone()).unwrap_or_default(),
-                album: t.album.name,
-                duration_ms: t.duration.num_milliseconds() as u32,
-                image_url: t.album.images.first().map(|img| img.url.clone()),
-            }),
+            Some(PlayableItem::Track(t)) => {
+                let id = t.id.as_ref().map(|id| id.to_string()).unwrap_or_default();
+                let uri = t.id.as_ref().map(|id| id.uri()).unwrap_or_default();
+                Some(TrackInfo {
+                    id,
+                    uri,
+                    title: t.name,
+                    artist: t.artists.first().map(|a| a.name.clone()).unwrap_or_default(),
+                    album: t.album.name,
+                    duration_ms: t.duration.num_milliseconds() as u32,
+                    image_url: t.album.images.first().map(|img| img.url.clone()),
+                })
+            }
             _ => None,
         };
 

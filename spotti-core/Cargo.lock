@@ -3083,6 +3083,7 @@ name = "spotti-core"
 version = "0.1.0"
 dependencies = [
  "cbindgen",
+ "chrono",
  "crossbeam-channel",
  "dirs",
  "env_logger",

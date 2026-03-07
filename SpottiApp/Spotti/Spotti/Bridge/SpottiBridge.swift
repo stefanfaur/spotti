@@ -3,6 +3,7 @@ import Foundation
 
 struct SpottiTrackInfo: Codable {
     let id: String
+    let uri: String?
     let title: String
     let artist: String
     let album: String
@@ -10,7 +11,7 @@ struct SpottiTrackInfo: Codable {
     let imageUrl: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, artist, album
+        case id, uri, title, artist, album
         case durationMs = "duration_ms"
         case imageUrl = "image_url"
     }
@@ -362,6 +363,10 @@ class SpottiEngine: ObservableObject {
               let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let eventType = dict["type"] as? String else { return }
 
+        if ["Playing", "TrackChanged", "Error", "Unavailable", "Loading", "Stopped", "EndOfTrack"].contains(eventType) {
+            print("[Spotti] event: \(eventType) | playbackMode=\(playbackMode) | isPlaying=\(isPlaying) | currentTrack=\(currentTrack?.id ?? "nil")")
+        }
+
         switch eventType {
         case "Playing":
             isPlaying = true
@@ -542,8 +547,14 @@ class SpottiEngine: ObservableObject {
                 return
             }
 
+            // If we're already playing locally, don't let a stale sync override us.
+            // The local Playing/Paused events are authoritative for local playback.
+            if case .local = playbackMode {
+                return
+            }
+
             // External device
-            if let trackObj = dict["track"] {
+            if let trackObj = dict["track"], !(trackObj is NSNull) {
                 // Track exists (playing or paused on external device)
                 decodeTrack(from: trackObj)
                 if let pos = dict["position_ms"] as? Int {
@@ -577,12 +588,24 @@ class SpottiEngine: ObservableObject {
     }
 
     private func decodeTrack(from obj: Any?) {
-        guard let trackDict = obj,
-              !(trackDict is NSNull),
-              let trackData = try? JSONSerialization.data(withJSONObject: trackDict),
-              let track = try? JSONDecoder().decode(SpottiTrackInfo.self, from: trackData)
-        else { return }
-        currentTrack = track
+        guard let trackDict = obj, !(trackDict is NSNull) else {
+            print("[Spotti] decodeTrack: obj is nil or NSNull")
+            return
+        }
+        guard let trackData = try? JSONSerialization.data(withJSONObject: trackDict) else {
+            print("[Spotti] decodeTrack: failed to serialize trackDict")
+            return
+        }
+        do {
+            let track = try JSONDecoder().decode(SpottiTrackInfo.self, from: trackData)
+            print("[Spotti] decodeTrack OK: id=\(track.id) uri=\(track.uri ?? "nil") title=\(track.title)")
+            currentTrack = track
+        } catch {
+            print("[Spotti] decodeTrack FAILED: \(error)")
+            if let json = String(data: trackData, encoding: .utf8) {
+                print("[Spotti] raw JSON: \(json)")
+            }
+        }
     }
 
     deinit {

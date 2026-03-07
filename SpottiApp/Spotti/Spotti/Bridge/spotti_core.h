@@ -127,52 +127,16 @@ void spotti_fetch_devices(struct SpottiCore *core);
 void spotti_transfer_playback(struct SpottiCore *core, const char *device_id, bool start_playing);
 
 /**
- * Get our librespot device ID. Returns a C string freed with `spotti_free_string`.
- * Returns null if not authenticated.
- */
-char *spotti_get_device_id(struct SpottiCore *core);
-
-/**
- * Start background playback sync. Polls Spotify Web API every 5s.
- * Emits PlaybackSynced events. Safe to call multiple times.
- */
-void spotti_start_playback_sync(struct SpottiCore *core);
-
-/**
- * Stop background playback sync.
- */
-void spotti_stop_playback_sync(struct SpottiCore *core);
-
-/**
- * Resume playback on active device via Web API.
- */
-void spotti_web_play(struct SpottiCore *core);
-
-/**
- * Pause playback on active device via Web API.
- */
-void spotti_web_pause(struct SpottiCore *core);
-
-/**
- * Skip to next track on active device via Web API.
- */
-void spotti_web_next(struct SpottiCore *core);
-
-/**
- * Skip to previous track on active device via Web API.
- */
-void spotti_web_previous(struct SpottiCore *core);
-
-/**
- * Seek on active device via Web API. position_ms is position in milliseconds.
- */
-void spotti_web_seek(struct SpottiCore *core, uint32_t position_ms);
-
-/**
  * Get the authenticated username. Returns a C string that must be freed with `spotti_free_string`.
  * Returns null if not authenticated.
  */
 char *spotti_get_username(struct SpottiCore *core);
+
+/**
+ * Get our librespot device ID. Returns a C string freed with `spotti_free_string`.
+ * Returns null if not authenticated.
+ */
+char *spotti_get_device_id(struct SpottiCore *core);
 
 /**
  * Free a string returned by spotti_get_username.
@@ -188,6 +152,42 @@ void spotti_cache_info(struct SpottiCore *core);
  * Clear all cached art. Emits CacheCleared event when done.
  */
 void spotti_clear_cache(struct SpottiCore *core);
+
+/**
+ * Start background playback sync. Polls Spotify Web API every 5s.
+ * Emits PlaybackSynced events. Safe to call multiple times (cancels previous task).
+ */
+void spotti_start_playback_sync(struct SpottiCore *core);
+
+/**
+ * Stop background playback sync.
+ */
+void spotti_stop_playback_sync(struct SpottiCore *core);
+
+/**
+ * Resume playback on the currently active device via Web API.
+ */
+void spotti_web_play(struct SpottiCore *core);
+
+/**
+ * Pause playback on the currently active device via Web API.
+ */
+void spotti_web_pause(struct SpottiCore *core);
+
+/**
+ * Skip to next track on the currently active device via Web API.
+ */
+void spotti_web_next(struct SpottiCore *core);
+
+/**
+ * Skip to previous track on the currently active device via Web API.
+ */
+void spotti_web_previous(struct SpottiCore *core);
+
+/**
+ * Seek on the currently active device via Web API.
+ */
+void spotti_web_seek(struct SpottiCore *core, uint32_t position_ms);
 
 /**
  * Cache album art. Result arrives via ArtCached event with local file path.

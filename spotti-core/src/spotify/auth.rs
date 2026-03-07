@@ -153,6 +153,10 @@ impl AuthManager {
     pub fn rspotify(&self) -> Option<&AuthCodePkceSpotify> {
         self.rspotify_client.as_ref()
     }
+
+    pub fn username(&self) -> Option<String> {
+        self.session.as_ref().map(|s| s.username())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

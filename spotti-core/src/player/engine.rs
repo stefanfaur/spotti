@@ -25,10 +25,12 @@ pub struct PlayerEngine {
     queue: Vec<String>,
     queue_index: usize,
     current_track: Option<TrackInfo>,
+    is_playing: bool,
     shuffle: bool,
     repeat: RepeatMode,
     original_queue: Vec<String>,
     now_playing_tx: Option<std_mpsc::Sender<NowPlayingCommand>>,
+    bitrate: Bitrate,
 }
 
 impl PlayerEngine {
@@ -47,7 +49,7 @@ impl PlayerEngine {
 
         let backend = audio_backend::find(None)
             .ok_or("No audio backend found (rodio expected)")?;
-        let audio_format = AudioFormat::default();
+        let audio_format = AudioFormat::S16;
 
         let mixer = SoftMixer::open(MixerConfig::default())
             .map_err(|e| format!("Failed to create mixer: {}", e))?;
@@ -69,10 +71,12 @@ impl PlayerEngine {
             queue: Vec::new(),
             queue_index: 0,
             current_track: None,
+            is_playing: false,
             shuffle: false,
             repeat: RepeatMode::Off,
             original_queue: Vec::new(),
             now_playing_tx,
+            bitrate: Bitrate::Bitrate320,
         })
     }
 
@@ -106,9 +110,28 @@ impl PlayerEngine {
 
     fn handle_command(&mut self, cmd: PlayerCommand) {
         match cmd {
-            PlayerCommand::Play => self.player.play(),
-            PlayerCommand::Pause => self.player.pause(),
-            PlayerCommand::Stop => self.player.stop(),
+            PlayerCommand::Play => {
+                self.is_playing = true;
+                self.player.play();
+            }
+            PlayerCommand::Pause => {
+                self.is_playing = false;
+                self.player.pause();
+            }
+            PlayerCommand::Toggle => {
+                log::info!("Toggle: is_playing={}", self.is_playing);
+                if self.is_playing {
+                    self.is_playing = false;
+                    self.player.pause();
+                } else {
+                    self.is_playing = true;
+                    self.player.play();
+                }
+            }
+            PlayerCommand::Stop => {
+                self.is_playing = false;
+                self.player.stop();
+            }
             PlayerCommand::Seek(pos_ms) => self.player.seek(pos_ms),
             PlayerCommand::Next => {
                 if self.queue_index + 1 < self.queue.len() {
@@ -173,6 +196,15 @@ impl PlayerEngine {
                 self.repeat = mode;
                 let _ = self.event_tx.send(PlayerEvent::RepeatChanged { mode });
             }
+            PlayerCommand::SetBitrate(level) => {
+                self.bitrate = match level {
+                    0 => Bitrate::Bitrate96,
+                    1 => Bitrate::Bitrate160,
+                    _ => Bitrate::Bitrate320,
+                };
+                // Bitrate change takes effect on next track load.
+                // librespot's Player doesn't support mid-stream bitrate changes.
+            }
         }
     }
 
@@ -197,9 +229,40 @@ impl PlayerEngine {
         }
     }
 
+    /// Advance the queue after a track fails to load, matching librespot's auto-skip behavior.
+    fn advance_after_error(&mut self) {
+        match self.repeat {
+            RepeatMode::Track => {
+                // Don't retry the same broken track in a loop
+                if self.queue_index + 1 < self.queue.len() {
+                    self.queue_index += 1;
+                    self.load_current_track(true);
+                } else {
+                    let _ = self.event_tx.send(PlayerEvent::Stopped);
+                }
+            }
+            RepeatMode::Context => {
+                self.queue_index += 1;
+                if self.queue_index >= self.queue.len() {
+                    self.queue_index = 0;
+                }
+                self.load_current_track(true);
+            }
+            RepeatMode::Off => {
+                if self.queue_index + 1 < self.queue.len() {
+                    self.queue_index += 1;
+                    self.load_current_track(true);
+                } else {
+                    let _ = self.event_tx.send(PlayerEvent::Stopped);
+                }
+            }
+        }
+    }
+
     fn handle_librespot_event(&mut self, event: LibrespotEvent) {
         match event {
             LibrespotEvent::Playing { position_ms, .. } => {
+                self.is_playing = true;
                 if let Some(ref track) = self.current_track {
                     let _ = self.event_tx.send(PlayerEvent::Playing {
                         track: track.clone(),
@@ -211,6 +274,7 @@ impl PlayerEngine {
                 }
             }
             LibrespotEvent::Paused { position_ms, .. } => {
+                self.is_playing = false;
                 if let Some(ref track) = self.current_track {
                     let _ = self.event_tx.send(PlayerEvent::Paused {
                         track: track.clone(),
@@ -222,6 +286,7 @@ impl PlayerEngine {
                 }
             }
             LibrespotEvent::Stopped { .. } => {
+                self.is_playing = false;
                 let _ = self.event_tx.send(PlayerEvent::Stopped);
                 self.update_now_playing(NowPlayingCommand::SetStopped);
             }
@@ -266,10 +331,22 @@ impl PlayerEngine {
                     }
                 }
             }
-            LibrespotEvent::Unavailable { .. } => {
-                let _ = self.event_tx.send(PlayerEvent::Error {
-                    message: "Track unavailable in your region or account".to_string(),
-                });
+            LibrespotEvent::Unavailable { track_id, .. } => {
+                let failed_id = track_id.to_string();
+                let current_uri = self.queue.get(self.queue_index).cloned().unwrap_or_default();
+                log::warn!("Track unavailable: {}", failed_id);
+
+                // Only advance if the unavailable track is the one we're trying to play,
+                // not a preloaded track that failed in the background.
+                let is_current = current_uri.ends_with(&failed_id);
+                if is_current {
+                    let _ = self.event_tx.send(PlayerEvent::Error {
+                        message: format!("Track unavailable: {}", current_uri),
+                    });
+                    self.advance_after_error();
+                } else {
+                    log::info!("Ignoring unavailable preload for {}, current is {}", failed_id, current_uri);
+                }
             }
             LibrespotEvent::Seeked { position_ms, .. } => {
                 let _ = self.event_tx.send(PlayerEvent::PositionChanged { position_ms });
@@ -311,8 +388,16 @@ fn track_info_from_audio_item(item: &AudioItem) -> TrackInfo {
 
     let image_url = item.covers.first().map(|c| c.url.clone());
 
+    let id_str = item.track_id.to_string();
+    let uri = if id_str.starts_with("spotify:") {
+        id_str.clone()
+    } else {
+        format!("spotify:track:{}", id_str)
+    };
+
     TrackInfo {
-        id: item.track_id.to_string(),
+        id: id_str,
+        uri,
         title: item.name.clone(),
         artist,
         album,

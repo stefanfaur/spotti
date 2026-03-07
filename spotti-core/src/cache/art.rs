@@ -42,6 +42,36 @@ impl ArtCache {
         Ok(path.to_string_lossy().to_string())
     }
 
+    /// Calculate total size of cached art in bytes.
+    pub fn cache_size_bytes(&self) -> u64 {
+        let mut total: u64 = 0;
+        if let Ok(entries) = std::fs::read_dir(&self.cache_dir) {
+            for entry in entries.flatten() {
+                if let Ok(meta) = entry.metadata() {
+                    total += meta.len();
+                }
+            }
+        }
+        total
+    }
+
+    /// Delete all cached art files.
+    pub fn clear(&self) -> Result<(), ArtCacheError> {
+        if let Ok(entries) = std::fs::read_dir(&self.cache_dir) {
+            for entry in entries.flatten() {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+        Ok(())
+    }
+
+    /// Number of cached items.
+    pub fn item_count(&self) -> usize {
+        std::fs::read_dir(&self.cache_dir)
+            .map(|entries| entries.count())
+            .unwrap_or(0)
+    }
+
     /// Check if art is already cached, return path if so
     pub fn cached_path(&self, id: &str) -> Option<String> {
         let path = self.cache_dir.join(format!("{id}.jpg"));

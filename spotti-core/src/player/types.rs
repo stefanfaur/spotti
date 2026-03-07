@@ -30,6 +30,7 @@ pub enum PlayerCommand {
 #[derive(Debug, Clone, Serialize)]
 pub struct TrackInfo {
     pub id: String,
+    pub uri: String,
     pub title: String,
     pub artist: String,
     pub album: String,
