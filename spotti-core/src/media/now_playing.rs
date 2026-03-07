@@ -24,6 +24,7 @@ pub enum NowPlayingCommand {
     SetStopped,
     UpdatePosition {
         position_ms: u32,
+        is_playing: bool,
     },
 }
 
@@ -116,12 +117,15 @@ pub fn spawn_now_playing_service(
                     NowPlayingCommand::SetStopped => {
                         controls.set_playback(MediaPlayback::Stopped)
                     }
-                    NowPlayingCommand::UpdatePosition { position_ms } => {
-                        controls.set_playback(MediaPlayback::Playing {
-                            progress: Some(MediaPosition(Duration::from_millis(
-                                position_ms as u64,
-                            ))),
-                        })
+                    NowPlayingCommand::UpdatePosition { position_ms, is_playing } => {
+                        let progress = Some(MediaPosition(Duration::from_millis(
+                            position_ms as u64,
+                        )));
+                        if is_playing {
+                            controls.set_playback(MediaPlayback::Playing { progress })
+                        } else {
+                            controls.set_playback(MediaPlayback::Paused { progress })
+                        }
                     }
                 };
 

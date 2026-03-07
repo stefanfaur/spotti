@@ -242,11 +242,16 @@ impl PlayerEngine {
                 return true;
             }
             PlayerCommand::Reconnect(new_session) => {
-                log::info!("Hot-swapping session on existing player");
+                log::info!("Hot-swapping session on existing player (is_playing={})", self.is_playing);
                 self.session = new_session.clone();
                 self.player.set_session(new_session);
                 self.consecutive_load_failures = 0;
                 self.session_lost_emitted = false;
+                // Re-apply pause state: librespot's internal state machine may
+                // transition to Playing after a session swap.
+                if !self.is_playing {
+                    self.player.pause();
+                }
             }
         }
         false
@@ -431,12 +436,14 @@ impl PlayerEngine {
                 let _ = self.event_tx.send(PlayerEvent::PositionChanged { position_ms });
                 self.update_now_playing(NowPlayingCommand::UpdatePosition {
                     position_ms: position_ms as u32,
+                    is_playing: self.is_playing,
                 });
             }
             LibrespotEvent::PositionChanged { position_ms, .. } => {
                 let _ = self.event_tx.send(PlayerEvent::PositionChanged { position_ms });
                 self.update_now_playing(NowPlayingCommand::UpdatePosition {
                     position_ms: position_ms as u32,
+                    is_playing: self.is_playing,
                 });
             }
             LibrespotEvent::Loading { .. } => {

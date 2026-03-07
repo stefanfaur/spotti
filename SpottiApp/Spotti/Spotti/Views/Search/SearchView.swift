@@ -84,7 +84,10 @@ struct SearchView: View {
                         if !newValue.isEmpty {
                             engine.search(query: newValue)
                         } else {
-                            engine.searchResults = nil
+                            // Defer to avoid mutating @Published during view update
+                            await MainActor.run {
+                                engine.searchResults = nil
+                            }
                         }
                     }
                 }

@@ -189,7 +189,10 @@ struct MainLayout: View {
                 withAnimation {
                     visibleError = error
                 }
-                engine.lastError = nil
+                // Defer clearing to avoid mutating @Published during view update
+                DispatchQueue.main.async {
+                    self.engine.lastError = nil
+                }
             }
         }
         .task(id: visibleError) {

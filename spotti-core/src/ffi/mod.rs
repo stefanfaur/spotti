@@ -114,6 +114,16 @@ pub extern "C" fn spotti_authenticate(core: *mut SpottiCore) -> i32 {
 pub extern "C" fn spotti_player_init(core: *mut SpottiCore) -> i32 {
     let core = unsafe { &mut *core };
 
+    // Shut down any existing engine before creating a new one.
+    // This ensures the old rodio/CoreAudio stream is closed before we open a new one,
+    // preventing dual audio streams that cause HAL overload and crackling.
+    if let Some(old_tx) = core.cmd_tx.take() {
+        let _ = old_tx.blocking_send(PlayerCommand::Shutdown);
+        drop(old_tx);
+        // Brief yield to let the old engine process Shutdown and close its audio sink.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
     let session = match core.auth.as_ref().and_then(|a| a.session()) {
         Some(s) => s.clone(),
         None => {
