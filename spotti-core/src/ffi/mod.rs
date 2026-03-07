@@ -697,49 +697,64 @@ pub extern "C" fn spotti_stop_playback_sync(core: *mut SpottiCore) {
 
 // ── Session Reconnection ──
 
-/// Reconnect after session loss. Drops old player, re-authenticates with
-/// cached credentials, and reinitializes the player + playback sync.
+/// Reconnect after session loss. Uses lightweight `player.set_session()` to
+/// hot-swap the session on the existing player — no teardown/rebuild needed.
+/// Falls back to full reinit if the engine command channel is dead.
 /// Returns 0 on success, -1 on failure.
 #[no_mangle]
 pub extern "C" fn spotti_reconnect(core: *mut SpottiCore) -> i32 {
-    {
-        let core = unsafe { &mut *core };
+    let core = unsafe { &mut *core };
 
-        // Stop playback sync
-        core.sync_running.store(false, std::sync::atomic::Ordering::SeqCst);
-        if let Some(handle) = core.sync_task.take() {
-            handle.abort();
+    // Stop playback sync (needs restarting with new rspotify client)
+    core.sync_running.store(false, std::sync::atomic::Ordering::SeqCst);
+    if let Some(handle) = core.sync_task.take() {
+        handle.abort();
+    }
+
+    // Re-authenticate with cached credentials (creates a new Session)
+    let mut auth = AuthManager::new(core.client_id.clone());
+    match get_runtime().block_on(auth.authenticate()) {
+        Ok(()) => {
+            log::info!("Re-authenticated successfully");
         }
-
-        // Gracefully shut down the old player engine before dropping the channel.
-        // This ensures the librespot Player calls stop() and releases audio resources.
-        if let Some(ref tx) = core.cmd_tx {
-            let _ = tx.blocking_send(PlayerCommand::Shutdown);
-            // Give the engine a moment to process Shutdown and stop audio output
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
-        core.cmd_tx = None;
-
-        // Re-authenticate with cached credentials
-        let mut auth = AuthManager::new(core.client_id.clone());
-        match get_runtime().block_on(auth.authenticate()) {
-            Ok(()) => {
-                log::info!("Session reconnected successfully");
-                core.auth = Some(auth);
-            }
-            Err(e) => {
-                log::error!("Reconnection failed: {}", e);
-                return -1;
-            }
+        Err(e) => {
+            log::error!("Reconnection failed: {}", e);
+            return -1;
         }
     }
-    // Mutable borrow dropped — safe to call FFI functions with raw pointer
 
-    let result = spotti_player_init(core);
-    if result == 0 {
-        spotti_start_playback_sync(core);
+    let new_session = match auth.session() {
+        Some(s) => s.clone(),
+        None => {
+            log::error!("Auth succeeded but no session available");
+            return -1;
+        }
+    };
+
+    // Try lightweight reconnect: send new session to existing engine
+    let mut needs_full_reinit = true;
+    if let Some(ref tx) = core.cmd_tx {
+        if tx.blocking_send(PlayerCommand::Reconnect(new_session)).is_ok() {
+            log::info!("Sent Reconnect to existing engine (lightweight path)");
+            needs_full_reinit = false;
+        } else {
+            log::warn!("Engine command channel dead — falling back to full reinit");
+            core.cmd_tx = None;
+        }
     }
-    result
+
+    core.auth = Some(auth);
+
+    if needs_full_reinit {
+        let result = spotti_player_init(core);
+        if result != 0 {
+            return result;
+        }
+    }
+
+    // Restart playback sync with the new rspotify client
+    spotti_start_playback_sync(core);
+    0
 }
 
 // ── Web API Playback Control ──

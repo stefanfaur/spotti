@@ -417,9 +417,8 @@ class SpottiEngine: ObservableObject {
             stopPositionTimer()
             let msg = dict["message"] as? String ?? "Session lost"
             print("[Spotti] SessionLost: \(msg) — attempting reconnect")
-            // Capture what we need to restore after reconnect
-            let restoreUri = lastLoadedUri
-            let restoreContext = lastLoadedContext
+            // Lightweight reconnect: the engine stays alive with its queue,
+            // only the session is hot-swapped via player.set_session().
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let core = self?.corePtr else { return }
                 let result = spotti_reconnect(core)
@@ -427,12 +426,8 @@ class SpottiEngine: ObservableObject {
                     if result == 0 {
                         print("[Spotti] Reconnected successfully")
                         self?.lastError = nil
-                        // Restore playback on the new engine
-                        if let ctx = restoreContext {
-                            self?.loadContext(uris: ctx.uris, index: ctx.index)
-                        } else if let uri = restoreUri {
-                            self?.loadTrack(uri: uri)
-                        }
+                        // Engine still has the queue — just resume playback
+                        self?.play()
                     } else {
                         self?.lastError = "Session expired. Please restart the app."
                         self?.isAuthenticated = false

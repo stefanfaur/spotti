@@ -19,6 +19,7 @@ use super::types::{PlayerCommand, PlayerEvent, RepeatMode, TrackInfo};
 
 pub struct PlayerEngine {
     player: Arc<Player>,
+    session: Session,
     mixer: Arc<SoftMixer>,
     cmd_rx: mpsc::Receiver<PlayerCommand>,
     event_tx: Sender<PlayerEvent>,
@@ -32,6 +33,7 @@ pub struct PlayerEngine {
     now_playing_tx: Option<std_mpsc::Sender<NowPlayingCommand>>,
     bitrate: Bitrate,
     consecutive_load_failures: u32,
+    session_lost_emitted: bool,
 }
 
 impl PlayerEngine {
@@ -59,13 +61,14 @@ impl PlayerEngine {
 
         let player = Player::new(
             player_config,
-            session,
+            session.clone(),
             volume_getter,
             move || backend(None, audio_format),
         );
 
         Ok(Self {
             player,
+            session,
             mixer,
             cmd_rx,
             event_tx,
@@ -79,6 +82,7 @@ impl PlayerEngine {
             now_playing_tx,
             bitrate: Bitrate::Bitrate320,
             consecutive_load_failures: 0,
+            session_lost_emitted: false,
         })
     }
 
@@ -91,6 +95,7 @@ impl PlayerEngine {
     /// Main run loop. Call this from a spawned tokio task.
     pub async fn run(mut self) {
         let mut event_channel = self.player.get_player_event_channel();
+        let mut health_interval = tokio::time::interval(Duration::from_secs(5));
 
         loop {
             tokio::select! {
@@ -109,10 +114,25 @@ impl PlayerEngine {
                         None => break,
                     }
                 }
+                _ = health_interval.tick() => {
+                    self.check_session_health();
+                }
             }
         }
         // Ensure audio is stopped when exiting the run loop for any reason
         self.player.stop();
+    }
+
+    /// Proactively detect session loss instead of waiting for load failures.
+    fn check_session_health(&mut self) {
+        if self.session.is_invalid() && !self.session_lost_emitted {
+            log::warn!("Session health check: session is invalid");
+            self.session_lost_emitted = true;
+            self.is_playing = false;
+            let _ = self.event_tx.send(PlayerEvent::SessionLost {
+                message: "Session connection lost".to_string(),
+            });
+        }
     }
 
     /// Returns true if the run loop should exit.
@@ -142,12 +162,14 @@ impl PlayerEngine {
             }
             PlayerCommand::Seek(pos_ms) => self.player.seek(pos_ms),
             PlayerCommand::Next => {
+                self.consecutive_load_failures = 0;
                 if self.queue_index + 1 < self.queue.len() {
                     self.queue_index += 1;
                     self.load_current_track(true);
                 }
             }
             PlayerCommand::Previous => {
+                self.consecutive_load_failures = 0;
                 if self.queue_index > 0 {
                     self.queue_index -= 1;
                     self.load_current_track(true);
@@ -219,6 +241,13 @@ impl PlayerEngine {
                 self.is_playing = false;
                 return true;
             }
+            PlayerCommand::Reconnect(new_session) => {
+                log::info!("Hot-swapping session on existing player");
+                self.session = new_session.clone();
+                self.player.set_session(new_session);
+                self.consecutive_load_failures = 0;
+                self.session_lost_emitted = false;
+            }
         }
         false
     }
@@ -227,6 +256,19 @@ impl PlayerEngine {
         let Some(uri_str) = self.queue.get(self.queue_index) else {
             return;
         };
+
+        // Fail fast if session is already dead — don't waste time on doomed loads.
+        if self.session.is_invalid() {
+            if !self.session_lost_emitted {
+                log::warn!("Session invalid at load time — emitting SessionLost");
+                self.session_lost_emitted = true;
+                self.is_playing = false;
+                let _ = self.event_tx.send(PlayerEvent::SessionLost {
+                    message: "Session connection lost".to_string(),
+                });
+            }
+            return;
+        }
 
         // Every load attempt increments the failure counter.
         // It is reset to 0 on successful Playing/TrackChanged events.

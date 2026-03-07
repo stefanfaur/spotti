@@ -26,6 +26,8 @@ pub enum PlayerCommand {
     SetBitrate(u32),
     /// Gracefully stop playback and exit the run loop.
     Shutdown,
+    /// Hot-swap the session on the existing player without destroying anything.
+    Reconnect(librespot_core::Session),
 }
 
 /// Track metadata sent to the UI via events.
