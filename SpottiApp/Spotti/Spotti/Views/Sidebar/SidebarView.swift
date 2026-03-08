@@ -35,6 +35,7 @@ struct SidebarView: View {
                         }
                     }
                     .padding(.horizontal, 12)
+                    .background(ScrollViewBackgroundClearer())
                 }
             } else {
                 Text("Loading playlists...")

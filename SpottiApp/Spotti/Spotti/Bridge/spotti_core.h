@@ -198,24 +198,21 @@ void spotti_web_previous(struct SpottiCore *core);
 void spotti_web_seek(struct SpottiCore *core, uint32_t position_ms);
 
 /**
- * Cache album art. Result arrives via ArtCached event with local file path.
- */
-void spotti_cache_art(struct SpottiCore *core, const char *id, const char *url);
-
-/**
  * Fetch recommendations seeded by a single track ID and begin playback.
+ * `track_id` is a bare Spotify ID or URI (null-terminated C string).
  * Emits RadioTracksReady on success, Error on failure.
  */
 void spotti_play_song_radio(struct SpottiCore *core, const char *track_id);
 
 /**
- * Fetch recommendations seeded by multiple track IDs (JSON array, up to 5).
+ * Fetch recommendations seeded by multiple track IDs (JSON array, up to 5) and begin playback.
  * Emits RadioTracksReady on success, Error on failure.
  */
 void spotti_play_playlist_radio(struct SpottiCore *core, const char *seed_ids_json);
 
 /**
  * Save the current track to Liked Songs.
+ * `track_id` is a bare Spotify ID or URI.
  * Emits TrackSavedStatus { is_saved: true } on success.
  */
 void spotti_save_track(struct SpottiCore *core, const char *track_id);
@@ -234,8 +231,16 @@ void spotti_check_saved(struct SpottiCore *core, const char *track_id);
 
 /**
  * Add a track URI to a playlist.
+ * `playlist_id` and `track_uri` are null-terminated C strings (bare ID or full URI).
  * Emits TrackAddedToPlaylist on success.
  */
-void spotti_add_to_playlist(struct SpottiCore *core, const char *playlist_id, const char *track_uri);
+void spotti_add_to_playlist(struct SpottiCore *core,
+                            const char *playlist_id,
+                            const char *track_uri);
+
+/**
+ * Cache album art. Result arrives via ArtCached event with local file path.
+ */
+void spotti_cache_art(struct SpottiCore *core, const char *id, const char *url);
 
 #endif  /* SPOTTI_CORE_H */
