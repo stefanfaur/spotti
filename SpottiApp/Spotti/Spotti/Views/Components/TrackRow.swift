@@ -107,6 +107,13 @@ struct TrackRow: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: isCurrentTrack)
         .animation(.easeOut(duration: 0.15), value: isHovered)
         .onHover { isHovered = $0 }
+        .contextMenu {
+            Button {
+                engine.playSongRadio(trackId: track.id)
+            } label: {
+                Label("Play Song Radio", systemImage: "antenna.radiowaves.left.and.right")
+            }
+        }
         .opacity(track.isPlayable ? 1.0 : 0.45)
         .allowsHitTesting(track.isPlayable)
     }

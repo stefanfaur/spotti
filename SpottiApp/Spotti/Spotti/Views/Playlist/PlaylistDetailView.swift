@@ -60,6 +60,11 @@ struct PlaylistDetailView: View {
                         Label("Shuffle", systemImage: "shuffle")
                     }
                     .buttonStyle(.glass)
+
+                    Button(action: { playlistRadio(playlist) }) {
+                        Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
+                    }
+                    .buttonStyle(.glass)
                 }
                 .padding(.top, 4)
             }
@@ -98,6 +103,15 @@ struct PlaylistDetailView: View {
         engine.setShuffle(true)
         let uris = playlist.tracks.map(\.uri)
         engine.loadContext(uris: uris, index: 0)
+    }
+
+    private func playlistRadio(_ playlist: PlaylistDetail) {
+        let seeds = playlist.tracks
+            .filter { $0.isPlayable }
+            .shuffled()
+            .prefix(5)
+            .map { $0.id }
+        engine.playPlaylistRadio(trackIds: Array(seeds))
     }
 
     private func playFromIndex(_ playlist: PlaylistDetail, index: Int) {
