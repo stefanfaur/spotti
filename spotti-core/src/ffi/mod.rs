@@ -852,6 +852,155 @@ pub unsafe extern "C" fn spotti_web_seek(core: *mut SpottiCore, position_ms: u32
     }
 }
 
+// ── Radio ──
+
+/// Fetch recommendations seeded by a single track ID and begin playback.
+/// `track_id` is a bare Spotify ID or URI (null-terminated C string).
+/// Emits RadioTracksReady on success, Error on failure.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_play_song_radio(
+    core: *mut SpottiCore,
+    track_id: *const c_char,
+) {
+    let core = &*core;
+    let track_id = CStr::from_ptr(track_id).to_string_lossy().to_string();
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            let event_cb = core.event_callback;
+            get_runtime().spawn(async move {
+                match crate::spotify::track_actions::get_recommendations(&client, &[track_id]).await {
+                    Ok(uris) => emit_event(event_cb, &PlayerEvent::RadioTracksReady { uris }),
+                    Err(e) => emit_event(event_cb, &PlayerEvent::Error { message: e.to_string() }),
+                }
+            });
+        }
+    }
+}
+
+/// Fetch recommendations seeded by multiple track IDs (JSON array, up to 5) and begin playback.
+/// Emits RadioTracksReady on success, Error on failure.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_play_playlist_radio(
+    core: *mut SpottiCore,
+    seed_ids_json: *const c_char,
+) {
+    let core = &*core;
+    let json_str = CStr::from_ptr(seed_ids_json).to_string_lossy().to_string();
+    if let Ok(ids) = serde_json::from_str::<Vec<String>>(&json_str) {
+        if let Some(auth) = &core.auth {
+            if let Some(client) = auth.rspotify() {
+                let client = client.clone();
+                let event_cb = core.event_callback;
+                get_runtime().spawn(async move {
+                    match crate::spotify::track_actions::get_recommendations(&client, &ids).await {
+                        Ok(uris) => emit_event(event_cb, &PlayerEvent::RadioTracksReady { uris }),
+                        Err(e) => emit_event(event_cb, &PlayerEvent::Error { message: e.to_string() }),
+                    }
+                });
+            }
+        }
+    }
+}
+
+// ── Track Actions ──
+
+/// Save the current track to Liked Songs.
+/// `track_id` is a bare Spotify ID or URI.
+/// Emits TrackSavedStatus { is_saved: true } on success.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_save_track(
+    core: *mut SpottiCore,
+    track_id: *const c_char,
+) {
+    let core = &*core;
+    let track_id = CStr::from_ptr(track_id).to_string_lossy().to_string();
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            let event_cb = core.event_callback;
+            get_runtime().spawn(async move {
+                match crate::spotify::track_actions::save_track(&client, &track_id).await {
+                    Ok(()) => emit_event(event_cb, &PlayerEvent::TrackSavedStatus { is_saved: true }),
+                    Err(e) => emit_event(event_cb, &PlayerEvent::Error { message: e.to_string() }),
+                }
+            });
+        }
+    }
+}
+
+/// Remove the current track from Liked Songs.
+/// Emits TrackSavedStatus { is_saved: false } on success.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_unsave_track(
+    core: *mut SpottiCore,
+    track_id: *const c_char,
+) {
+    let core = &*core;
+    let track_id = CStr::from_ptr(track_id).to_string_lossy().to_string();
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            let event_cb = core.event_callback;
+            get_runtime().spawn(async move {
+                match crate::spotify::track_actions::unsave_track(&client, &track_id).await {
+                    Ok(()) => emit_event(event_cb, &PlayerEvent::TrackSavedStatus { is_saved: false }),
+                    Err(e) => emit_event(event_cb, &PlayerEvent::Error { message: e.to_string() }),
+                }
+            });
+        }
+    }
+}
+
+/// Check if a track is in the user's Liked Songs.
+/// Emits TrackSavedStatus { is_saved: bool }.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_check_saved(
+    core: *mut SpottiCore,
+    track_id: *const c_char,
+) {
+    let core = &*core;
+    let track_id = CStr::from_ptr(track_id).to_string_lossy().to_string();
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            let event_cb = core.event_callback;
+            get_runtime().spawn(async move {
+                match crate::spotify::track_actions::check_saved(&client, &track_id).await {
+                    Ok(is_saved) => emit_event(event_cb, &PlayerEvent::TrackSavedStatus { is_saved }),
+                    Err(e) => emit_event(event_cb, &PlayerEvent::Error { message: e.to_string() }),
+                }
+            });
+        }
+    }
+}
+
+/// Add a track URI to a playlist.
+/// `playlist_id` and `track_uri` are null-terminated C strings (bare ID or full URI).
+/// Emits TrackAddedToPlaylist on success.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_add_to_playlist(
+    core: *mut SpottiCore,
+    playlist_id: *const c_char,
+    track_uri: *const c_char,
+) {
+    let core = &*core;
+    let playlist_id = CStr::from_ptr(playlist_id).to_string_lossy().to_string();
+    let track_uri = CStr::from_ptr(track_uri).to_string_lossy().to_string();
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            let event_cb = core.event_callback;
+            get_runtime().spawn(async move {
+                match crate::spotify::track_actions::add_to_playlist(&client, &playlist_id, &track_uri).await {
+                    Ok(()) => emit_event(event_cb, &PlayerEvent::TrackAddedToPlaylist),
+                    Err(e) => emit_event(event_cb, &PlayerEvent::Error { message: e.to_string() }),
+                }
+            });
+        }
+    }
+}
+
 // ── Art Cache ──
 
 /// Cache album art. Result arrives via ArtCached event with local file path.

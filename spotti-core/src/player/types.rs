@@ -67,6 +67,9 @@ pub enum PlayerEvent {
     DeviceTransferred { device_id: String },
     CacheInfo { size_bytes: u64, item_count: u32 },
     CacheCleared,
+    RadioTracksReady { uris: Vec<String> },
+    TrackSavedStatus { is_saved: bool },
+    TrackAddedToPlaylist,
     SessionLost { message: String },
     PlaybackSynced {
         track: Option<TrackInfo>,   // None = nothing playing anywhere
