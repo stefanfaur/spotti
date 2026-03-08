@@ -56,7 +56,7 @@ struct TrackRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.name)
                         .font(.body)
-                        .foregroundStyle(isCurrentTrack ? theme.effectiveAccentColor : .primary)
+                        .foregroundStyle(isCurrentTrack ? .white : .primary)
                         .fontWeight(isCurrentTrack ? .semibold : .regular)
                     Text(track.artist)
                         .font(.caption)
@@ -85,6 +85,12 @@ struct TrackRow: View {
             if isCurrentTrack {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(.ultraThinMaterial)
+                    .overlay(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(theme.effectiveAccentColor)
+                            .frame(width: 3)
+                            .padding(.vertical, 6)
+                    }
                     .overlay {
                         RoundedRectangle(cornerRadius: 8)
                             .fill(theme.effectiveAccentColor.opacity(0.12))
