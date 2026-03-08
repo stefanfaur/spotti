@@ -23,45 +23,77 @@ pub async fn get_recommendations(
     client: &AuthCodePkceSpotify,
     seed_track_ids: &[String],
 ) -> Result<Vec<String>, TrackActionError> {
+    log::info!("[radio] get_recommendations called with seeds: {:?}", seed_track_ids);
+
     // Step 1: resolve artist ID from the first valid seed track
     let mut artist_id = None;
     for id_str in seed_track_ids.iter().take(3) {
-        if let Ok(tid) = TrackId::from_id_or_uri(id_str) {
-            if let Ok(full_track) = client.track(tid, None).await {
-                if let Some(a) = full_track.artists.first() {
-                    artist_id = a.id.clone();
-                    if artist_id.is_some() {
-                        break;
+        match TrackId::from_id_or_uri(id_str) {
+            Ok(tid) => {
+                log::info!("[radio] fetching track info for id={}", id_str);
+                match client.track(tid, None).await {
+                    Ok(full_track) => {
+                        log::info!("[radio] got track '{}' with {} artists", full_track.name, full_track.artists.len());
+                        if let Some(a) = full_track.artists.first() {
+                            artist_id = a.id.clone();
+                            log::info!("[radio] resolved artist '{}' id={:?}", a.name, artist_id);
+                            if artist_id.is_some() {
+                                break;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("[radio] client.track() failed for {}: {}", id_str, e);
                     }
                 }
+            }
+            Err(e) => {
+                log::warn!("[radio] invalid track id '{}': {}", id_str, e);
             }
         }
     }
 
     let artist_id = artist_id.ok_or_else(|| {
-        TrackActionError::ApiError("could not resolve artist ID from seed track".into())
+        let msg = "could not resolve artist ID from seed track".to_string();
+        log::error!("[radio] {}", msg);
+        TrackActionError::ApiError(msg)
     })?;
 
     // Step 2: fetch related artists
+    log::info!("[radio] fetching related artists for artist_id={}", artist_id.id());
     let related = client
         .artist_related_artists(artist_id)
         .await
-        .map_err(|e| TrackActionError::ApiError(e.to_string()))?;
+        .map_err(|e| {
+            log::error!("[radio] artist_related_artists failed: {}", e);
+            TrackActionError::ApiError(e.to_string())
+        })?;
+
+    log::info!("[radio] got {} related artists", related.len());
 
     // Step 3: collect top tracks from up to 6 related artists (~5 tracks each)
     let mut uris = Vec::new();
     for artist in related.iter().take(6) {
-        if let Ok(tracks) = client
+        log::info!("[radio] fetching top tracks for related artist '{}'", artist.name);
+        match client
             .artist_top_tracks(artist.id.clone(), Some(Market::FromToken))
             .await
         {
-            for track in tracks.iter().take(5) {
-                if let Some(id) = &track.id {
-                    uris.push(id.uri());
+            Ok(tracks) => {
+                log::info!("[radio]   got {} top tracks", tracks.len());
+                for track in tracks.iter().take(5) {
+                    if let Some(id) = &track.id {
+                        uris.push(id.uri());
+                    }
                 }
+            }
+            Err(e) => {
+                log::warn!("[radio]   artist_top_tracks failed for '{}': {}", artist.name, e);
             }
         }
     }
+
+    log::info!("[radio] total radio URIs collected: {}", uris.len());
 
     if uris.is_empty() {
         return Err(TrackActionError::Empty);

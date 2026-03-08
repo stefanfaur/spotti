@@ -864,17 +864,28 @@ pub unsafe extern "C" fn spotti_play_song_radio(
 ) {
     let core = &*core;
     let track_id = CStr::from_ptr(track_id).to_string_lossy().to_string();
+    log::info!("[ffi] spotti_play_song_radio: track_id={}", track_id);
     if let Some(auth) = &core.auth {
         if let Some(client) = auth.rspotify() {
             let client = client.clone();
             let event_cb = core.event_callback;
             get_runtime().spawn(async move {
                 match crate::spotify::track_actions::get_recommendations(&client, &[track_id]).await {
-                    Ok(uris) => emit_event(event_cb, &PlayerEvent::RadioTracksReady { uris }),
-                    Err(e) => emit_event(event_cb, &PlayerEvent::Error { message: e.to_string() }),
+                    Ok(uris) => {
+                        log::info!("[ffi] spotti_play_song_radio: success, {} uris", uris.len());
+                        emit_event(event_cb, &PlayerEvent::RadioTracksReady { uris });
+                    }
+                    Err(e) => {
+                        log::error!("[ffi] spotti_play_song_radio error: {}", e);
+                        emit_event(event_cb, &PlayerEvent::Error { message: e.to_string() });
+                    }
                 }
             });
+        } else {
+            log::error!("[ffi] spotti_play_song_radio: no rspotify client");
         }
+    } else {
+        log::error!("[ffi] spotti_play_song_radio: not authenticated");
     }
 }
 
@@ -887,18 +898,34 @@ pub unsafe extern "C" fn spotti_play_playlist_radio(
 ) {
     let core = &*core;
     let json_str = CStr::from_ptr(seed_ids_json).to_string_lossy().to_string();
-    if let Ok(ids) = serde_json::from_str::<Vec<String>>(&json_str) {
-        if let Some(auth) = &core.auth {
-            if let Some(client) = auth.rspotify() {
-                let client = client.clone();
-                let event_cb = core.event_callback;
-                get_runtime().spawn(async move {
-                    match crate::spotify::track_actions::get_recommendations(&client, &ids).await {
-                        Ok(uris) => emit_event(event_cb, &PlayerEvent::RadioTracksReady { uris }),
-                        Err(e) => emit_event(event_cb, &PlayerEvent::Error { message: e.to_string() }),
-                    }
-                });
+    log::info!("[ffi] spotti_play_playlist_radio: seeds={}", json_str);
+    match serde_json::from_str::<Vec<String>>(&json_str) {
+        Ok(ids) => {
+            if let Some(auth) = &core.auth {
+                if let Some(client) = auth.rspotify() {
+                    let client = client.clone();
+                    let event_cb = core.event_callback;
+                    get_runtime().spawn(async move {
+                        match crate::spotify::track_actions::get_recommendations(&client, &ids).await {
+                            Ok(uris) => {
+                                log::info!("[ffi] spotti_play_playlist_radio: success, {} uris", uris.len());
+                                emit_event(event_cb, &PlayerEvent::RadioTracksReady { uris });
+                            }
+                            Err(e) => {
+                                log::error!("[ffi] spotti_play_playlist_radio error: {}", e);
+                                emit_event(event_cb, &PlayerEvent::Error { message: e.to_string() });
+                            }
+                        }
+                    });
+                } else {
+                    log::error!("[ffi] spotti_play_playlist_radio: no rspotify client");
+                }
+            } else {
+                log::error!("[ffi] spotti_play_playlist_radio: not authenticated");
             }
+        }
+        Err(e) => {
+            log::error!("[ffi] spotti_play_playlist_radio: failed to parse seed JSON: {}", e);
         }
     }
 }

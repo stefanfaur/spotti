@@ -494,6 +494,7 @@ class SpottiEngine: ObservableObject {
         case "Error":
             isLoading = false
             if let msg = dict["message"] as? String {
+                print("[Spotti] ERROR: \(msg)")
                 lastError = msg
                 if msg.hasPrefix("Device transfer failed") {
                     // Transfer target gone (e.g. Spotify closed) — reset to idle and
