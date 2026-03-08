@@ -59,6 +59,7 @@ class SpottiEngine: ObservableObject {
     @Published var cacheItemCount: UInt32 = 0
     @Published var playbackMode: PlaybackMode = .idle
     @Published var activeDeviceName: String?
+    @Published var isCurrentTrackLiked: Bool = false
 
     private var corePtr: OpaquePointer?
     private var positionTimer: Timer?
@@ -330,6 +331,54 @@ class SpottiEngine: ObservableObject {
         setRepeat((repeatMode + 1) % 3)
     }
 
+    // MARK: - Radio & Track Actions
+
+    func playSongRadio(trackId: String) {
+        guard let core = corePtr else { return }
+        isLoading = true
+        trackId.withCString { ptr in
+            spotti_play_song_radio(core, ptr)
+        }
+    }
+
+    func playPlaylistRadio(trackIds: [String]) {
+        guard let core = corePtr else { return }
+        guard let jsonData = try? JSONEncoder().encode(trackIds),
+              let jsonString = String(data: jsonData, encoding: .utf8) else { return }
+        isLoading = true
+        jsonString.withCString { ptr in
+            spotti_play_playlist_radio(core, ptr)
+        }
+    }
+
+    func toggleLike() {
+        guard let core = corePtr, let track = currentTrack else { return }
+        let id = track.uri ?? track.id
+        if isCurrentTrackLiked {
+            isCurrentTrackLiked = false  // optimistic
+            id.withCString { ptr in spotti_unsave_track(core, ptr) }
+        } else {
+            isCurrentTrackLiked = true   // optimistic
+            id.withCString { ptr in spotti_save_track(core, ptr) }
+        }
+    }
+
+    func checkCurrentTrackSaved() {
+        guard let core = corePtr, let track = currentTrack else { return }
+        let id = track.uri ?? track.id
+        id.withCString { ptr in spotti_check_saved(core, ptr) }
+    }
+
+    func addToPlaylist(playlistId: String, trackUri: String) {
+        guard let core = corePtr else { return }
+        AppSettings.shared.lastUsedPlaylistId = playlistId
+        playlistId.withCString { pid in
+            trackUri.withCString { turi in
+                spotti_add_to_playlist(core, pid, turi)
+            }
+        }
+    }
+
     // MARK: - Position Timer
 
     private func startPositionTimer() {
@@ -363,6 +412,7 @@ class SpottiEngine: ObservableObject {
                 positionMs = UInt32(pos)
             }
             decodeTrack(from: dict["track"])
+            checkCurrentTrackSaved()
             if let track = currentTrack {
                 ThemeEngine.shared.updateColors(for: track)
             }
@@ -383,6 +433,7 @@ class SpottiEngine: ObservableObject {
             isLoading = false
             currentTrack = nil
             positionMs = 0
+            isCurrentTrackLiked = false
             stopPositionTimer()
             ThemeEngine.shared.resetColors()
             playbackMode = .idle
@@ -390,6 +441,7 @@ class SpottiEngine: ObservableObject {
 
         case "TrackChanged":
             decodeTrack(from: dict["track"])
+            checkCurrentTrackSaved()
             if let track = currentTrack {
                 ThemeEngine.shared.updateColors(for: track)
                 if track.id != lastNotifiedTrackId {
@@ -520,6 +572,22 @@ class SpottiEngine: ObservableObject {
         case "CacheCleared":
             cacheSize = 0
             cacheItemCount = 0
+
+        case "RadioTracksReady":
+            isLoading = false
+            if let urisJson = dict["uris"],
+               let data = try? JSONSerialization.data(withJSONObject: urisJson),
+               let uris = try? JSONDecoder().decode([String].self, from: data) {
+                loadContext(uris: uris, index: 0)
+            }
+
+        case "TrackSavedStatus":
+            if let saved = dict["is_saved"] as? Bool {
+                isCurrentTrackLiked = saved
+            }
+
+        case "TrackAddedToPlaylist":
+            break  // no-op for now; toast can be added later
 
         case "ArtCached":
             break

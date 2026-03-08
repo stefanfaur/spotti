@@ -41,6 +41,9 @@ class AppSettings: ObservableObject {
 
     @AppStorage("notifications.trackChange") var notifyOnTrackChange: Bool = true
 
+    // MARK: - Playlist Actions
+    @AppStorage("actions.lastUsedPlaylistId") var lastUsedPlaylistId: String = ""
+
     // MARK: - Theme Mode
 
     func applyThemeMode() {

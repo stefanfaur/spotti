@@ -9,6 +9,7 @@ struct PlayerBarView: View {
 
     @State private var isSeekBarHovered = false
     @State private var showDevicePicker = false
+    @State private var showPlaylistPicker = false
 
     var body: some View {
         HStack(spacing: 16) {
@@ -94,8 +95,53 @@ struct PlayerBarView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
+
+            if engine.currentTrack != nil {
+                Button { engine.toggleLike() } label: {
+                    Image(systemName: engine.isCurrentTrackLiked ? "heart.fill" : "heart")
+                        .font(.system(size: 12))
+                        .foregroundStyle(engine.isCurrentTrackLiked ? theme.effectiveAccentColor : .secondary)
+                        .frame(width: 24, height: 24)
+                        .contentTransition(.symbolEffect(.replace))
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+
+                Button { } label: {
+                    Image(systemName: "text.badge.plus")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .simultaneousGesture(
+                    TapGesture().onEnded {
+                        let lastId = AppSettings.shared.lastUsedPlaylistId
+                        guard !lastId.isEmpty,
+                              let uri = engine.currentTrack?.uri ?? engine.currentTrack.map({ "spotify:track:\($0.id)" })
+                        else { showPlaylistPicker = true; return }
+                        engine.addToPlaylist(playlistId: lastId, trackUri: uri)
+                    }
+                )
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: 0.4).onEnded { _ in
+                        showPlaylistPicker = true
+                    }
+                )
+                .popover(isPresented: $showPlaylistPicker) {
+                    PlaylistPickerView { playlistId in
+                        showPlaylistPicker = false
+                        if let uri = engine.currentTrack?.uri ?? engine.currentTrack.map({ "spotify:track:\($0.id)" }) {
+                            engine.addToPlaylist(playlistId: playlistId, trackUri: uri)
+                        }
+                    }
+                    .environmentObject(engine)
+                    .environmentObject(theme)
+                }
+            }
         }
-        .frame(width: 250, alignment: .leading)
+        .frame(width: 300, alignment: .leading)
     }
 
     // MARK: - Playback Controls

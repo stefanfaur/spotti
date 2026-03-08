@@ -202,4 +202,40 @@ void spotti_web_seek(struct SpottiCore *core, uint32_t position_ms);
  */
 void spotti_cache_art(struct SpottiCore *core, const char *id, const char *url);
 
+/**
+ * Fetch recommendations seeded by a single track ID and begin playback.
+ * Emits RadioTracksReady on success, Error on failure.
+ */
+void spotti_play_song_radio(struct SpottiCore *core, const char *track_id);
+
+/**
+ * Fetch recommendations seeded by multiple track IDs (JSON array, up to 5).
+ * Emits RadioTracksReady on success, Error on failure.
+ */
+void spotti_play_playlist_radio(struct SpottiCore *core, const char *seed_ids_json);
+
+/**
+ * Save the current track to Liked Songs.
+ * Emits TrackSavedStatus { is_saved: true } on success.
+ */
+void spotti_save_track(struct SpottiCore *core, const char *track_id);
+
+/**
+ * Remove the current track from Liked Songs.
+ * Emits TrackSavedStatus { is_saved: false } on success.
+ */
+void spotti_unsave_track(struct SpottiCore *core, const char *track_id);
+
+/**
+ * Check if a track is in the user's Liked Songs.
+ * Emits TrackSavedStatus { is_saved: bool }.
+ */
+void spotti_check_saved(struct SpottiCore *core, const char *track_id);
+
+/**
+ * Add a track URI to a playlist.
+ * Emits TrackAddedToPlaylist on success.
+ */
+void spotti_add_to_playlist(struct SpottiCore *core, const char *playlist_id, const char *track_uri);
+
 #endif  /* SPOTTI_CORE_H */
