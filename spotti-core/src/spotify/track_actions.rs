@@ -1,6 +1,6 @@
 use rspotify::clients::{BaseClient, OAuthClient};
 use rspotify::model::idtypes::{Id, PlayableId};
-use rspotify::model::{ArtistId, PlaylistId, TrackId};
+use rspotify::model::{Market, PlaylistId, TrackId};
 use rspotify::AuthCodePkceSpotify;
 
 #[derive(Debug, thiserror::Error)]
@@ -13,37 +13,55 @@ pub enum TrackActionError {
     Empty,
 }
 
-/// Get recommended track URIs seeded by up to 5 track IDs.
+/// Build a radio playlist seeded by up to 5 track IDs.
+#[allow(deprecated)]
+/// Resolves the first seed track's artist, fetches related artists, and
+/// returns their top tracks (up to ~30 URIs). Uses only endpoints that are
+/// available to all app tiers (the recommendations endpoint was deprecated
+/// for apps created after Nov 2024).
 pub async fn get_recommendations(
     client: &AuthCodePkceSpotify,
     seed_track_ids: &[String],
 ) -> Result<Vec<String>, TrackActionError> {
-    let seed_tracks: Vec<TrackId<'_>> = seed_track_ids
-        .iter()
-        .filter_map(|id| TrackId::from_id_or_uri(id).ok())
-        .collect();
-
-    if seed_tracks.is_empty() {
-        return Err(TrackActionError::InvalidId("no valid seed track IDs".into()));
+    // Step 1: resolve artist ID from the first valid seed track
+    let mut artist_id = None;
+    for id_str in seed_track_ids.iter().take(3) {
+        if let Ok(tid) = TrackId::from_id_or_uri(id_str) {
+            if let Ok(full_track) = client.track(tid, None).await {
+                if let Some(a) = full_track.artists.first() {
+                    artist_id = a.id.clone();
+                    if artist_id.is_some() {
+                        break;
+                    }
+                }
+            }
+        }
     }
 
-    let recs = client
-        .recommendations(
-            std::iter::empty(),
-            None::<std::iter::Empty<ArtistId>>,
-            None::<std::iter::Empty<&str>>,
-            Some(seed_tracks.into_iter()),
-            None,
-            Some(30),
-        )
+    let artist_id = artist_id.ok_or_else(|| {
+        TrackActionError::ApiError("could not resolve artist ID from seed track".into())
+    })?;
+
+    // Step 2: fetch related artists
+    let related = client
+        .artist_related_artists(artist_id)
         .await
         .map_err(|e| TrackActionError::ApiError(e.to_string()))?;
 
-    let uris: Vec<String> = recs
-        .tracks
-        .iter()
-        .filter_map(|t| t.id.as_ref().map(|id| id.uri()))
-        .collect();
+    // Step 3: collect top tracks from up to 6 related artists (~5 tracks each)
+    let mut uris = Vec::new();
+    for artist in related.iter().take(6) {
+        if let Ok(tracks) = client
+            .artist_top_tracks(artist.id.clone(), Some(Market::FromToken))
+            .await
+        {
+            for track in tracks.iter().take(5) {
+                if let Some(id) = &track.id {
+                    uris.push(id.uri());
+                }
+            }
+        }
+    }
 
     if uris.is_empty() {
         return Err(TrackActionError::Empty);

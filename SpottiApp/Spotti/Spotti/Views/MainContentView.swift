@@ -42,11 +42,18 @@ struct MainContentView: View {
                 case .artistDetail(let id):
                     ArtistDetailView(artistId: id)
                         .id(id)
+                case .radioQueue:
+                    RadioQueueView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .transition(.opacity.combined(with: .offset(y: 8)))
             .animation(.spring(response: 0.35, dampingFraction: 0.9), value: router.destination)
+        }
+        .onChange(of: engine.radioUris) { uris in
+            if !uris.isEmpty {
+                router.navigate(to: .radioQueue)
+            }
         }
     }
 }

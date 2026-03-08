@@ -8,6 +8,7 @@ enum NavigationDestination: Hashable {
     case playlistDetail(id: String)
     case albumDetail(id: String)
     case artistDetail(id: String)
+    case radioQueue
 }
 
 class Router: ObservableObject {

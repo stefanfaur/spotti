@@ -62,7 +62,7 @@ struct PlaylistDetailView: View {
                     .buttonStyle(.glass)
 
                     Button(action: { playlistRadio(playlist) }) {
-                        Label("Radio", systemImage: "antenna.radiowaves.left.and.right")
+                        Label("Go to Radio", systemImage: "antenna.radiowaves.left.and.right")
                     }
                     .buttonStyle(.glass)
                 }

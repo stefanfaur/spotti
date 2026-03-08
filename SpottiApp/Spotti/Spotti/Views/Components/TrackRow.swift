@@ -111,7 +111,7 @@ struct TrackRow: View {
             Button {
                 engine.playSongRadio(trackId: track.id)
             } label: {
-                Label("Play Song Radio", systemImage: "antenna.radiowaves.left.and.right")
+                Label("Go to Radio", systemImage: "antenna.radiowaves.left.and.right")
             }
         }
         .opacity(track.isPlayable ? 1.0 : 0.45)

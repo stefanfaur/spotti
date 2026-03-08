@@ -60,6 +60,7 @@ class SpottiEngine: ObservableObject {
     @Published var playbackMode: PlaybackMode = .idle
     @Published var activeDeviceName: String?
     @Published var isCurrentTrackLiked: Bool = false
+    @Published var radioUris: [String] = []
 
     private var corePtr: OpaquePointer?
     private var positionTimer: Timer?
@@ -578,7 +579,7 @@ class SpottiEngine: ObservableObject {
             if let urisJson = dict["uris"],
                let data = try? JSONSerialization.data(withJSONObject: urisJson),
                let uris = try? JSONDecoder().decode([String].self, from: data) {
-                loadContext(uris: uris, index: 0)
+                radioUris = uris
             }
 
         case "TrackSavedStatus":
