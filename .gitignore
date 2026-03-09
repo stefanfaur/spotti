@@ -15,6 +15,9 @@ SpottiApp/Spotti/Spotti/Bridge/spotti_core.h
 # Generated header (rebuilt by cargo)
 spotti-core/include/
 
+# Build output
+build/
+
 # OS
 .DS_Store
 
