@@ -360,7 +360,8 @@ pub async fn lastfm_album_info(
     Some((wiki, tags))
 }
 
-/// Returns top crowd-sourced tags for a track via Last.fm track.getTopTags.
+/// Returns top crowd-sourced tags for a track via Last.fm track.getTopTags,
+/// falling back to artist.getTopTags when track-level tags are unavailable.
 pub async fn lastfm_track_top_tags(
     track: &str,
     artist: &str,
@@ -371,36 +372,54 @@ pub async fn lastfm_track_top_tags(
         log::warn!("[lastfm] API key is empty, skipping track.getTopTags");
         return vec![];
     }
-    let url = format!(
+
+    // Try track-level tags first
+    let tags = lastfm_get_top_tags("track.getTopTags", &format!(
         "https://ws.audioscrobbler.com/2.0/?method=track.getTopTags&track={}&artist={}&api_key={}&autocorrect=1&format=json",
         urlencoding::encode(track),
         urlencoding::encode(artist),
         api_key,
-    );
-    let response = match reqwest::get(&url).await {
+    )).await;
+
+    if !tags.is_empty() {
+        return tags;
+    }
+
+    // Fall back to artist-level tags
+    log::info!("[lastfm] track tags empty, falling back to artist.getTopTags for '{}'", artist);
+    lastfm_get_top_tags("artist.getTopTags", &format!(
+        "https://ws.audioscrobbler.com/2.0/?method=artist.getTopTags&artist={}&api_key={}&autocorrect=1&format=json",
+        urlencoding::encode(artist),
+        api_key,
+    )).await
+}
+
+/// Shared helper: fetch top tags from a Last.fm getTopTags endpoint.
+async fn lastfm_get_top_tags(method: &str, url: &str) -> Vec<String> {
+    let response = match reqwest::get(url).await {
         Ok(r) => r,
         Err(e) => {
-            log::warn!("[lastfm] track.getTopTags HTTP request failed: {}", e);
+            log::warn!("[lastfm] {} HTTP request failed: {}", method, e);
             return vec![];
         }
     };
     let text = match response.text().await {
         Ok(t) => t,
         Err(e) => {
-            log::warn!("[lastfm] track.getTopTags failed to read response body: {}", e);
+            log::warn!("[lastfm] {} failed to read response body: {}", method, e);
             return vec![];
         }
     };
     let json: serde_json::Value = match serde_json::from_str(&text) {
         Ok(j) => j,
         Err(e) => {
-            log::warn!("[lastfm] track.getTopTags JSON parse failed: {}", e);
+            log::warn!("[lastfm] {} JSON parse failed: {}", method, e);
             return vec![];
         }
     };
 
     if json.get("error").is_some() {
-        log::warn!("[lastfm] track.getTopTags API error: {}", json);
+        log::warn!("[lastfm] {} API error: {}", method, json);
         return vec![];
     }
 
@@ -411,7 +430,7 @@ pub async fn lastfm_track_top_tags(
         .filter_map(|t| t["name"].as_str().map(String::from))
         .take(5)
         .collect();
-    log::info!("[lastfm] track.getTopTags result: {} tags: {:?}", tags.len(), tags);
+    log::info!("[lastfm] {} result: {} tags: {:?}", method, tags.len(), tags);
     tags
 }
 

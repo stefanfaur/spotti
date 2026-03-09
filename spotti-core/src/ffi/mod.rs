@@ -47,7 +47,9 @@ unsafe fn emit_event(callback: Option<SpottiEventCallback>, event: &PlayerEvent)
 /// Returns an opaque pointer that must be freed with `spotti_core_destroy`.
 #[no_mangle]
 pub extern "C" fn spotti_core_create(client_id: *const c_char) -> *mut SpottiCore {
-    env_logger::try_init().ok();
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .try_init()
+        .ok();
 
     let client_id = unsafe { CStr::from_ptr(client_id) }
         .to_string_lossy()
