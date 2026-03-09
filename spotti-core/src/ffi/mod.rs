@@ -21,6 +21,7 @@ pub type SpottiEventCallback = extern "C" fn(event_json: *const c_char);
 pub struct SpottiCore {
     auth: Option<AuthManager>,
     client_id: String,
+    lastfm_api_key: String,
     cmd_tx: Option<mpsc::Sender<PlayerCommand>>,
     event_callback: Option<SpottiEventCallback>,
     art_cache: Option<ArtCache>,
@@ -55,6 +56,7 @@ pub extern "C" fn spotti_core_create(client_id: *const c_char) -> *mut SpottiCor
     let core = SpottiCore {
         auth: None,
         client_id,
+        lastfm_api_key: String::new(),
         cmd_tx: None,
         event_callback: None,
         art_cache: None,
@@ -62,6 +64,16 @@ pub extern "C" fn spotti_core_create(client_id: *const c_char) -> *mut SpottiCor
         sync_running: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
     };
     Box::into_raw(Box::new(core))
+}
+
+/// Set the Last.fm API key used for radio features.
+/// Must be called before any radio functions are invoked.
+#[no_mangle]
+pub extern "C" fn spotti_set_lastfm_api_key(core: *mut SpottiCore, api_key: *const c_char) {
+    let core = unsafe { &mut *core };
+    core.lastfm_api_key = unsafe { CStr::from_ptr(api_key) }
+        .to_string_lossy()
+        .into_owned();
 }
 
 /// Destroy the Spotti core and free all resources.
@@ -410,12 +422,13 @@ pub unsafe extern "C" fn spotti_fetch_album(
 ) {
     let core = &*core;
     let album_id = CStr::from_ptr(album_id).to_string_lossy().to_string();
+    let lastfm_key = core.lastfm_api_key.clone();
     if let Some(auth) = &core.auth {
         if let Some(client) = auth.rspotify() {
             let client = client.clone();
             let event_cb = core.event_callback;
             get_runtime().spawn(async move {
-                match crate::spotify::detail::fetch_album(&client, &album_id).await {
+                match crate::spotify::detail::fetch_album(&client, &album_id, &lastfm_key).await {
                     Ok(detail) => {
                         if let Ok(json) = serde_json::to_string(&detail) {
                             emit_event(
@@ -446,12 +459,13 @@ pub unsafe extern "C" fn spotti_fetch_artist(
 ) {
     let core = &*core;
     let artist_id = CStr::from_ptr(artist_id).to_string_lossy().to_string();
+    let lastfm_key = core.lastfm_api_key.clone();
     if let Some(auth) = &core.auth {
         if let Some(client) = auth.rspotify() {
             let client = client.clone();
             let event_cb = core.event_callback;
             get_runtime().spawn(async move {
-                match crate::spotify::detail::fetch_artist(&client, &artist_id).await {
+                match crate::spotify::detail::fetch_artist(&client, &artist_id, &lastfm_key).await {
                     Ok(detail) => {
                         if let Ok(json) = serde_json::to_string(&detail) {
                             emit_event(
@@ -865,15 +879,18 @@ pub unsafe extern "C" fn spotti_play_song_radio(
     let core = &*core;
     let track_id = CStr::from_ptr(track_id).to_string_lossy().to_string();
     log::info!("[ffi] spotti_play_song_radio: track_id={}", track_id);
+    let lastfm_key = core.lastfm_api_key.clone();
     if let Some(auth) = &core.auth {
         if let Some(client) = auth.rspotify() {
             let client = client.clone();
             let event_cb = core.event_callback;
             get_runtime().spawn(async move {
-                match crate::spotify::track_actions::get_recommendations(&client, &[track_id]).await {
-                    Ok(uris) => {
-                        log::info!("[ffi] spotti_play_song_radio: success, {} uris", uris.len());
-                        emit_event(event_cb, &PlayerEvent::RadioTracksReady { uris });
+                match crate::spotify::track_actions::get_recommendations(&client, &[track_id], &lastfm_key, None).await {
+                    Ok(result) => {
+                        log::info!("[ffi] spotti_play_song_radio: success, {} tracks", result.tracks.len());
+                        let uris: Vec<String> = result.tracks.iter().map(|t| t.uri.clone()).collect();
+                        let tracks_json = serde_json::to_string(&result.tracks).unwrap_or_default();
+                        emit_event(event_cb, &PlayerEvent::RadioTracksReady { name: result.name, uris, tracks_json });
                     }
                     Err(e) => {
                         log::error!("[ffi] spotti_play_song_radio error: {}", e);
@@ -890,26 +907,32 @@ pub unsafe extern "C" fn spotti_play_song_radio(
 }
 
 /// Fetch recommendations seeded by multiple track IDs (JSON array, up to 5) and begin playback.
+/// `name` is the playlist/context name shown in the radio queue view.
 /// Emits RadioTracksReady on success, Error on failure.
 #[no_mangle]
 pub unsafe extern "C" fn spotti_play_playlist_radio(
     core: *mut SpottiCore,
     seed_ids_json: *const c_char,
+    name: *const c_char,
 ) {
     let core = &*core;
     let json_str = CStr::from_ptr(seed_ids_json).to_string_lossy().to_string();
-    log::info!("[ffi] spotti_play_playlist_radio: seeds={}", json_str);
+    let radio_name = CStr::from_ptr(name).to_string_lossy().to_string();
+    log::info!("[ffi] spotti_play_playlist_radio: seeds={}, name={}", json_str, radio_name);
     match serde_json::from_str::<Vec<String>>(&json_str) {
         Ok(ids) => {
+            let lastfm_key = core.lastfm_api_key.clone();
             if let Some(auth) = &core.auth {
                 if let Some(client) = auth.rspotify() {
                     let client = client.clone();
                     let event_cb = core.event_callback;
                     get_runtime().spawn(async move {
-                        match crate::spotify::track_actions::get_recommendations(&client, &ids).await {
-                            Ok(uris) => {
-                                log::info!("[ffi] spotti_play_playlist_radio: success, {} uris", uris.len());
-                                emit_event(event_cb, &PlayerEvent::RadioTracksReady { uris });
+                        match crate::spotify::track_actions::get_recommendations(&client, &ids, &lastfm_key, Some(radio_name)).await {
+                            Ok(result) => {
+                                log::info!("[ffi] spotti_play_playlist_radio: success, {} tracks", result.tracks.len());
+                                let uris: Vec<String> = result.tracks.iter().map(|t| t.uri.clone()).collect();
+                                let tracks_json = serde_json::to_string(&result.tracks).unwrap_or_default();
+                                emit_event(event_cb, &PlayerEvent::RadioTracksReady { name: result.name, uris, tracks_json });
                             }
                             Err(e) => {
                                 log::error!("[ffi] spotti_play_playlist_radio error: {}", e);
@@ -926,6 +949,63 @@ pub unsafe extern "C" fn spotti_play_playlist_radio(
         }
         Err(e) => {
             log::error!("[ffi] spotti_play_playlist_radio: failed to parse seed JSON: {}", e);
+        }
+    }
+}
+
+/// Fetch crowd-sourced genre tags for a track from Last.fm.
+/// `track_name` and `artist_name` are null-terminated C strings.
+/// Emits TrackTagsReady { tags: Vec<String> } asynchronously.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_fetch_track_tags(
+    core: *mut SpottiCore,
+    track_name: *const c_char,
+    artist_name: *const c_char,
+) {
+    let core = &*core;
+    let track = CStr::from_ptr(track_name).to_string_lossy().to_string();
+    let artist = CStr::from_ptr(artist_name).to_string_lossy().to_string();
+    let lastfm_key = core.lastfm_api_key.clone();
+    let event_cb = core.event_callback;
+    get_runtime().spawn(async move {
+        let tags = crate::spotify::track_actions::lastfm_track_top_tags(&track, &artist, &lastfm_key).await;
+        emit_event(event_cb, &PlayerEvent::TrackTagsReady { tags });
+    });
+}
+
+/// Start a radio station based on a Last.fm genre tag (e.g. "indie rock").
+/// `tag` is a null-terminated C string.
+/// Emits RadioTracksReady on success, Error on failure.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_play_tag_radio(
+    core: *mut SpottiCore,
+    tag: *const c_char,
+) {
+    let core = &*core;
+    let tag = CStr::from_ptr(tag).to_string_lossy().to_string();
+    log::info!("[ffi] spotti_play_tag_radio: tag={}", tag);
+    let lastfm_key = core.lastfm_api_key.clone();
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            let event_cb = core.event_callback;
+            get_runtime().spawn(async move {
+                match crate::spotify::track_actions::get_tag_recommendations(&client, &tag, &lastfm_key).await {
+                    Ok(result) => {
+                        let uris: Vec<String> = result.tracks.iter().map(|t| t.uri.clone()).collect();
+                        let tracks_json = serde_json::to_string(&result.tracks).unwrap_or_default();
+                        emit_event(event_cb, &PlayerEvent::RadioTracksReady {
+                            name: result.name,
+                            uris,
+                            tracks_json,
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("[ffi] spotti_play_tag_radio error: {}", e);
+                        emit_event(event_cb, &PlayerEvent::Error { message: e.to_string() });
+                    }
+                }
+            });
         }
     }
 }

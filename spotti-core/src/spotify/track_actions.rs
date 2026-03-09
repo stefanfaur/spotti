@@ -1,7 +1,9 @@
 use rspotify::clients::{BaseClient, OAuthClient};
 use rspotify::model::idtypes::{Id, PlayableId};
-use rspotify::model::{Market, PlaylistId, TrackId};
+use rspotify::model::{FullTrack, Market, PlaylistId, SearchResult, SearchType, TrackId};
 use rspotify::AuthCodePkceSpotify;
+
+use crate::player::types::TrackInfo;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TrackActionError {
@@ -13,92 +15,399 @@ pub enum TrackActionError {
     Empty,
 }
 
+pub struct RadioResult {
+    pub name: String,
+    pub tracks: Vec<TrackInfo>,
+}
+
 /// Build a radio playlist seeded by up to 5 track IDs.
-#[allow(deprecated)]
-/// Resolves the first seed track's artist, fetches related artists, and
-/// returns their top tracks (up to ~30 URIs). Uses only endpoints that are
-/// available to all app tiers (the recommendations endpoint was deprecated
-/// for apps created after Nov 2024).
+///
+/// For single-seed (song radio), uses Last.fm `track.getSimilar` for more targeted results.
+/// Falls back to `artist.getSimilar` if not enough tracks, or for multi-seed (playlist radio).
 pub async fn get_recommendations(
     client: &AuthCodePkceSpotify,
     seed_track_ids: &[String],
-) -> Result<Vec<String>, TrackActionError> {
+    lastfm_api_key: &str,
+    radio_name: Option<String>,
+) -> Result<RadioResult, TrackActionError> {
     log::info!("[radio] get_recommendations called with seeds: {:?}", seed_track_ids);
 
-    // Step 1: resolve artist ID from the first valid seed track
-    let mut artist_id = None;
+    // Resolve artist name and track name from first seed track
+    let mut artist_name: Option<String> = None;
+    let mut seed_track_name: Option<String> = None;
     for id_str in seed_track_ids.iter().take(3) {
         match TrackId::from_id_or_uri(id_str) {
             Ok(tid) => {
                 log::info!("[radio] fetching track info for id={}", id_str);
                 match client.track(tid, None).await {
                     Ok(full_track) => {
-                        log::info!("[radio] got track '{}' with {} artists", full_track.name, full_track.artists.len());
                         if let Some(a) = full_track.artists.first() {
-                            artist_id = a.id.clone();
-                            log::info!("[radio] resolved artist '{}' id={:?}", a.name, artist_id);
-                            if artist_id.is_some() {
-                                break;
-                            }
+                            artist_name = Some(a.name.clone());
+                            seed_track_name = Some(full_track.name.clone());
+                            log::info!("[radio] resolved artist '{}'", a.name);
+                            break;
                         }
                     }
-                    Err(e) => {
-                        log::warn!("[radio] client.track() failed for {}: {}", id_str, e);
-                    }
+                    Err(e) => log::warn!("[radio] client.track() failed for {}: {}", id_str, e),
                 }
             }
-            Err(e) => {
-                log::warn!("[radio] invalid track id '{}': {}", id_str, e);
-            }
+            Err(e) => log::warn!("[radio] invalid track id '{}': {}", id_str, e),
         }
     }
 
-    let artist_id = artist_id.ok_or_else(|| {
-        let msg = "could not resolve artist ID from seed track".to_string();
-        log::error!("[radio] {}", msg);
-        TrackActionError::ApiError(msg)
+    let artist_name = artist_name.ok_or_else(|| {
+        TrackActionError::ApiError("could not resolve artist name from seed track".to_string())
     })?;
 
-    // Step 2: fetch related artists
-    log::info!("[radio] fetching related artists for artist_id={}", artist_id.id());
-    let related = client
-        .artist_related_artists(artist_id)
-        .await
-        .map_err(|e| {
-            log::error!("[radio] artist_related_artists failed: {}", e);
-            TrackActionError::ApiError(e.to_string())
-        })?;
+    let name = radio_name.unwrap_or_else(|| {
+        format!("{} Radio", seed_track_name.as_deref().unwrap_or(&artist_name))
+    });
 
-    log::info!("[radio] got {} related artists", related.len());
+    let mut tracks: Vec<TrackInfo> = Vec::new();
 
-    // Step 3: collect top tracks from up to 6 related artists (~5 tracks each)
-    let mut uris = Vec::new();
-    for artist in related.iter().take(6) {
-        log::info!("[radio] fetching top tracks for related artist '{}'", artist.name);
-        match client
-            .artist_top_tracks(artist.id.clone(), Some(Market::FromToken))
-            .await
-        {
-            Ok(tracks) => {
-                log::info!("[radio]   got {} top tracks", tracks.len());
-                for track in tracks.iter().take(5) {
-                    if let Some(id) = &track.id {
-                        uris.push(id.uri());
-                    }
+    // Song radio (single seed): use track.getSimilar for more targeted results
+    if seed_track_ids.len() == 1 {
+        if let Some(ref track_name) = seed_track_name {
+            let similar = lastfm_similar_tracks(track_name, &artist_name, lastfm_api_key).await
+                .unwrap_or_default();
+            log::info!("[radio] track.getSimilar returned {} results", similar.len());
+
+            for (t_name, t_artist) in similar.iter().take(30) {
+                if let Some(info) = search_track_on_spotify(client, t_name, t_artist).await {
+                    tracks.push(info);
                 }
             }
-            Err(e) => {
-                log::warn!("[radio]   artist_top_tracks failed for '{}': {}", artist.name, e);
+            log::info!("[radio] after track.getSimilar search: {} tracks", tracks.len());
+        }
+    }
+
+    // Fall back to artist.getSimilar if we don't have enough tracks
+    // (also the primary path for playlist radio with multiple seeds)
+    if tracks.len() < 10 {
+        log::info!("[radio] topping up with artist.getSimilar (have {} tracks)", tracks.len());
+        let similar_names = lastfm_similar_artists(&artist_name, lastfm_api_key).await?;
+        log::info!("[radio] Last.fm returned {} similar artists", similar_names.len());
+
+        for similar_name in similar_names.iter().take(8) {
+            let query = format!("artist:{}", similar_name);
+            match client
+                .search(&query, SearchType::Artist, None, None, Some(1), None)
+                .await
+            {
+                Ok(SearchResult::Artists(page)) => {
+                    if let Some(spotify_artist) = page.items.into_iter().next() {
+                        match client.artist_top_tracks(spotify_artist.id, Some(Market::FromToken)).await {
+                            Ok(top_tracks) => {
+                                for track in top_tracks.iter().take(5) {
+                                    tracks.push(full_track_to_info(track));
+                                }
+                            }
+                            Err(e) => log::warn!("[radio] artist_top_tracks failed: {}", e),
+                        }
+                    }
+                }
+                Ok(_) => {}
+                Err(e) => log::warn!("[radio] search failed for '{}': {}", similar_name, e),
             }
         }
     }
 
-    log::info!("[radio] total radio URIs collected: {}", uris.len());
+    log::info!("[radio] total radio tracks collected: {}", tracks.len());
 
-    if uris.is_empty() {
+    if tracks.is_empty() {
         return Err(TrackActionError::Empty);
     }
-    Ok(uris)
+    Ok(RadioResult { name, tracks })
+}
+
+fn full_track_to_info(track: &FullTrack) -> TrackInfo {
+    TrackInfo {
+        id: track.id.as_ref().map(|id| id.to_string()).unwrap_or_default(),
+        uri: track.id.as_ref().map(|id| id.uri()).unwrap_or_default(),
+        title: track.name.clone(),
+        artist: track.artists.first().map(|a| a.name.clone()).unwrap_or_default(),
+        album: track.album.name.clone(),
+        duration_ms: track.duration.num_milliseconds() as u32,
+        image_url: track.album.images.first().map(|img| img.url.clone()),
+    }
+}
+
+async fn lastfm_similar_artists(
+    artist: &str,
+    api_key: &str,
+) -> Result<Vec<String>, TrackActionError> {
+    let url = format!(
+        "https://ws.audioscrobbler.com/2.0/?method=artist.getSimilar&artist={}&api_key={}&limit=10&format=json",
+        urlencoding::encode(artist),
+        api_key,
+    );
+    log::info!("[radio] Last.fm request: artist.getSimilar for '{}'", artist);
+
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| TrackActionError::ApiError(format!("Last.fm request failed: {}", e)))?
+        .text()
+        .await
+        .map_err(|e| TrackActionError::ApiError(format!("Last.fm response read failed: {}", e)))?;
+
+    let json: serde_json::Value = serde_json::from_str(&response)
+        .map_err(|e| TrackActionError::ApiError(format!("Last.fm JSON parse failed: {}", e)))?;
+
+    if let Some(err) = json.get("error") {
+        let msg = json.get("message").and_then(|m| m.as_str()).unwrap_or("unknown");
+        log::error!("[radio] Last.fm API error {}: {}", err, msg);
+        return Err(TrackActionError::ApiError(format!("Last.fm error {}: {}", err, msg)));
+    }
+
+    let names = json["similarartists"]["artist"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|a| a["name"].as_str().map(String::from))
+        .collect();
+
+    Ok(names)
+}
+
+/// Returns similar tracks as (track_name, artist_name) pairs via Last.fm track.getSimilar.
+async fn lastfm_similar_tracks(
+    track: &str,
+    artist: &str,
+    api_key: &str,
+) -> Result<Vec<(String, String)>, TrackActionError> {
+    let url = format!(
+        "https://ws.audioscrobbler.com/2.0/?method=track.getSimilar&track={}&artist={}&api_key={}&limit=30&autocorrect=1&format=json",
+        urlencoding::encode(track),
+        urlencoding::encode(artist),
+        api_key,
+    );
+    log::info!("[radio] Last.fm request: track.getSimilar for '{}' by '{}'", track, artist);
+
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| TrackActionError::ApiError(format!("Last.fm request failed: {}", e)))?
+        .text()
+        .await
+        .map_err(|e| TrackActionError::ApiError(format!("Last.fm response read failed: {}", e)))?;
+
+    let json: serde_json::Value = serde_json::from_str(&response)
+        .map_err(|e| TrackActionError::ApiError(format!("Last.fm JSON parse failed: {}", e)))?;
+
+    if let Some(err) = json.get("error") {
+        let msg = json.get("message").and_then(|m| m.as_str()).unwrap_or("unknown");
+        log::error!("[radio] Last.fm track.getSimilar error {}: {}", err, msg);
+        return Err(TrackActionError::ApiError(format!("Last.fm error {}: {}", err, msg)));
+    }
+
+    let pairs = json["similartracks"]["track"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|t| {
+            let name = t["name"].as_str()?.to_string();
+            let artist = t["artist"]["name"].as_str()?.to_string();
+            Some((name, artist))
+        })
+        .collect();
+
+    Ok(pairs)
+}
+
+/// Search Spotify for a specific track by name+artist, return the first match as TrackInfo.
+async fn search_track_on_spotify(
+    client: &AuthCodePkceSpotify,
+    track_name: &str,
+    artist_name: &str,
+) -> Option<TrackInfo> {
+    let query = format!("track:{} artist:{}", track_name, artist_name);
+    match client
+        .search(&query, SearchType::Track, None, None, Some(1), None)
+        .await
+    {
+        Ok(SearchResult::Tracks(page)) => {
+            page.items.into_iter().next().map(|t| full_track_to_info(&t))
+        }
+        _ => None,
+    }
+}
+
+/// Returns (bio_summary, tags) from Last.fm artist.getInfo.
+/// Bio has the trailing "Read more on Last.fm" link stripped.
+pub async fn lastfm_artist_info(
+    artist: &str,
+    api_key: &str,
+) -> Option<(String, Vec<String>)> {
+    let url = format!(
+        "https://ws.audioscrobbler.com/2.0/?method=artist.getInfo&artist={}&api_key={}&autocorrect=1&format=json",
+        urlencoding::encode(artist),
+        api_key,
+    );
+    let response = reqwest::get(&url).await.ok()?.text().await.ok()?;
+    let json: serde_json::Value = serde_json::from_str(&response).ok()?;
+
+    if json.get("error").is_some() {
+        return None;
+    }
+
+    let bio_raw = json["artist"]["bio"]["summary"].as_str().unwrap_or("").to_string();
+    let bio = bio_raw
+        .split("<a href=")
+        .next()
+        .unwrap_or(&bio_raw)
+        .trim()
+        .to_string();
+    let bio = if bio.is_empty() { return None; } else { bio };
+
+    let tags: Vec<String> = json["artist"]["tags"]["tag"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|t| t["name"].as_str().map(String::from))
+        .take(5)
+        .collect();
+
+    Some((bio, tags))
+}
+
+/// Returns (wiki_summary, tags) from Last.fm album.getInfo.
+pub async fn lastfm_album_info(
+    album: &str,
+    artist: &str,
+    api_key: &str,
+) -> Option<(String, Vec<String>)> {
+    let url = format!(
+        "https://ws.audioscrobbler.com/2.0/?method=album.getInfo&album={}&artist={}&api_key={}&autocorrect=1&format=json",
+        urlencoding::encode(album),
+        urlencoding::encode(artist),
+        api_key,
+    );
+    let response = reqwest::get(&url).await.ok()?.text().await.ok()?;
+    let json: serde_json::Value = serde_json::from_str(&response).ok()?;
+
+    if json.get("error").is_some() {
+        return None;
+    }
+
+    let wiki_raw = json["album"]["wiki"]["summary"].as_str().unwrap_or("").to_string();
+    let wiki = wiki_raw
+        .split("<a href=")
+        .next()
+        .unwrap_or(&wiki_raw)
+        .trim()
+        .to_string();
+    let wiki = if wiki.is_empty() { return None; } else { wiki };
+
+    let tags: Vec<String> = json["album"]["tags"]["tag"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|t| t["name"].as_str().map(String::from))
+        .take(5)
+        .collect();
+
+    Some((wiki, tags))
+}
+
+/// Returns top crowd-sourced tags for a track via Last.fm track.getTopTags.
+pub async fn lastfm_track_top_tags(
+    track: &str,
+    artist: &str,
+    api_key: &str,
+) -> Vec<String> {
+    let url = format!(
+        "https://ws.audioscrobbler.com/2.0/?method=track.getTopTags&track={}&artist={}&api_key={}&autocorrect=1&format=json",
+        urlencoding::encode(track),
+        urlencoding::encode(artist),
+        api_key,
+    );
+    let Ok(response) = reqwest::get(&url).await else { return vec![] };
+    let Ok(text) = response.text().await else { return vec![] };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else { return vec![] };
+
+    if json.get("error").is_some() {
+        return vec![];
+    }
+
+    json["toptags"]["tag"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|t| t["name"].as_str().map(String::from))
+        .take(5)
+        .collect()
+}
+
+/// Build a radio playlist from a Last.fm tag/genre (e.g. "indie rock").
+/// Calls tag.getTopTracks, then searches Spotify for each track.
+pub async fn get_tag_recommendations(
+    client: &AuthCodePkceSpotify,
+    tag: &str,
+    lastfm_api_key: &str,
+) -> Result<RadioResult, TrackActionError> {
+    log::info!("[tag-radio] get_tag_recommendations for tag='{}'", tag);
+
+    let url = format!(
+        "https://ws.audioscrobbler.com/2.0/?method=tag.getTopTracks&tag={}&api_key={}&limit=50&format=json",
+        urlencoding::encode(tag),
+        lastfm_api_key,
+    );
+
+    let response = reqwest::get(&url)
+        .await
+        .map_err(|e| TrackActionError::ApiError(format!("Last.fm request failed: {}", e)))?
+        .text()
+        .await
+        .map_err(|e| TrackActionError::ApiError(format!("Last.fm response read failed: {}", e)))?;
+
+    let json: serde_json::Value = serde_json::from_str(&response)
+        .map_err(|e| TrackActionError::ApiError(format!("Last.fm JSON parse failed: {}", e)))?;
+
+    if let Some(err) = json.get("error") {
+        let msg = json.get("message").and_then(|m| m.as_str()).unwrap_or("unknown");
+        return Err(TrackActionError::ApiError(format!("Last.fm error {}: {}", err, msg)));
+    }
+
+    let pairs: Vec<(String, String)> = json["tracks"]["track"]
+        .as_array()
+        .unwrap_or(&vec![])
+        .iter()
+        .filter_map(|t| {
+            let name = t["name"].as_str()?.to_string();
+            let artist = t["artist"]["name"].as_str()?.to_string();
+            Some((name, artist))
+        })
+        .collect();
+
+    log::info!("[tag-radio] tag.getTopTracks returned {} results", pairs.len());
+
+    let mut tracks: Vec<TrackInfo> = Vec::new();
+    for (t_name, t_artist) in pairs.iter().take(40) {
+        if let Some(info) = search_track_on_spotify(client, t_name, t_artist).await {
+            tracks.push(info);
+        }
+        if tracks.len() >= 30 {
+            break;
+        }
+    }
+
+    log::info!("[tag-radio] collected {} Spotify tracks", tracks.len());
+
+    if tracks.is_empty() {
+        return Err(TrackActionError::Empty);
+    }
+
+    Ok(RadioResult {
+        name: format!("{} Radio", capitalize_first(tag)),
+        tracks,
+    })
+}
+
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+    }
 }
 
 /// Save a track to the user's liked songs.

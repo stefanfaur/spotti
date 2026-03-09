@@ -65,6 +65,8 @@ pub struct AlbumDetail {
     pub release_date: Option<String>,
     pub tracks: Vec<TrackSummary>,
     pub total_tracks: u32,
+    pub wiki: Option<String>,
+    pub lastfm_tags: Vec<String>,
 }
 
 /// Full artist detail
@@ -75,6 +77,8 @@ pub struct ArtistDetail {
     pub image_url: Option<String>,
     pub follower_count: u32,
     pub albums: Vec<AlbumSummary>,
+    pub bio: Option<String>,
+    pub lastfm_tags: Vec<String>,
 }
 
 /// Search results grouped by type
