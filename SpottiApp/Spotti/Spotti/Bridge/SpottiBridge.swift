@@ -61,6 +61,9 @@ class SpottiEngine: ObservableObject {
     @Published var activeDeviceName: String?
     @Published var isCurrentTrackLiked: Bool = false
     @Published var radioUris: [String] = []
+    @Published var radioName: String = "Radio"
+    @Published var radioTracks: [SpottiTrackInfo] = []
+    @Published var currentTrackTags: [String] = []
 
     private var corePtr: OpaquePointer?
     private var positionTimer: Timer?
@@ -78,11 +81,15 @@ class SpottiEngine: ObservableObject {
 
     private init() {}
 
-    func initialize(clientId: String) {
+    func initialize(clientId: String, lastfmApiKey: String) {
         guard corePtr == nil else { return }
 
         corePtr = clientId.withCString { ptr in
             spotti_core_create(ptr)
+        }
+
+        lastfmApiKey.withCString { ptr in
+            spotti_set_lastfm_api_key(corePtr, ptr)
         }
 
         spotti_set_event_callback(corePtr) { jsonPtr in
@@ -342,13 +349,32 @@ class SpottiEngine: ObservableObject {
         }
     }
 
-    func playPlaylistRadio(trackIds: [String]) {
+    func playPlaylistRadio(trackIds: [String], name: String) {
         guard let core = corePtr else { return }
         guard let jsonData = try? JSONEncoder().encode(trackIds),
               let jsonString = String(data: jsonData, encoding: .utf8) else { return }
         isLoading = true
-        jsonString.withCString { ptr in
-            spotti_play_playlist_radio(core, ptr)
+        jsonString.withCString { seedsPtr in
+            name.withCString { namePtr in
+                spotti_play_playlist_radio(core, seedsPtr, namePtr)
+            }
+        }
+    }
+
+    func fetchTrackTags(track: SpottiTrackInfo) {
+        guard let core = corePtr else { return }
+        track.title.withCString { titlePtr in
+            track.artist.withCString { artistPtr in
+                spotti_fetch_track_tags(core, titlePtr, artistPtr)
+            }
+        }
+    }
+
+    func playTagRadio(tag: String) {
+        guard let core = corePtr else { return }
+        isLoading = true
+        tag.withCString { ptr in
+            spotti_play_tag_radio(core, ptr)
         }
     }
 
@@ -435,6 +461,7 @@ class SpottiEngine: ObservableObject {
             currentTrack = nil
             positionMs = 0
             isCurrentTrackLiked = false
+            currentTrackTags = []
             stopPositionTimer()
             ThemeEngine.shared.resetColors()
             playbackMode = .idle
@@ -443,6 +470,10 @@ class SpottiEngine: ObservableObject {
         case "TrackChanged":
             decodeTrack(from: dict["track"])
             checkCurrentTrackSaved()
+            currentTrackTags = []
+            if let track = currentTrack {
+                fetchTrackTags(track: track)
+            }
             if let track = currentTrack {
                 ThemeEngine.shared.updateColors(for: track)
                 if track.id != lastNotifiedTrackId {
@@ -577,10 +608,15 @@ class SpottiEngine: ObservableObject {
 
         case "RadioTracksReady":
             isLoading = false
+            radioName = dict["name"] as? String ?? "Radio"
             if let urisJson = dict["uris"],
                let data = try? JSONSerialization.data(withJSONObject: urisJson),
                let uris = try? JSONDecoder().decode([String].self, from: data) {
                 radioUris = uris
+            }
+            if let tracksJsonStr = dict["tracks_json"] as? String,
+               let data = tracksJsonStr.data(using: .utf8) {
+                radioTracks = (try? JSONDecoder().decode([SpottiTrackInfo].self, from: data)) ?? []
             }
 
         case "TrackSavedStatus":
@@ -590,6 +626,11 @@ class SpottiEngine: ObservableObject {
 
         case "TrackAddedToPlaylist":
             break  // no-op for now; toast can be added later
+
+        case "TrackTagsReady":
+            if let tagsArray = dict["tags"] as? [String] {
+                currentTrackTags = tagsArray
+            }
 
         case "ArtCached":
             break

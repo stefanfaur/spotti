@@ -25,6 +25,12 @@ typedef void (*SpottiEventCallback)(const char *event_json);
 struct SpottiCore *spotti_core_create(const char *client_id);
 
 /**
+ * Set the Last.fm API key used for radio features.
+ * Must be called before any radio functions are invoked.
+ */
+void spotti_set_lastfm_api_key(struct SpottiCore *core, const char *api_key);
+
+/**
  * Destroy the Spotti core and free all resources.
  */
 void spotti_core_destroy(struct SpottiCore *core);
@@ -206,9 +212,28 @@ void spotti_play_song_radio(struct SpottiCore *core, const char *track_id);
 
 /**
  * Fetch recommendations seeded by multiple track IDs (JSON array, up to 5) and begin playback.
+ * `name` is the playlist/context name shown in the radio queue view.
  * Emits RadioTracksReady on success, Error on failure.
  */
-void spotti_play_playlist_radio(struct SpottiCore *core, const char *seed_ids_json);
+void spotti_play_playlist_radio(struct SpottiCore *core,
+                                const char *seed_ids_json,
+                                const char *name);
+
+/**
+ * Fetch crowd-sourced genre tags for a track from Last.fm.
+ * `track_name` and `artist_name` are null-terminated C strings.
+ * Emits TrackTagsReady { tags: [...] } asynchronously.
+ */
+void spotti_fetch_track_tags(struct SpottiCore *core,
+                             const char *track_name,
+                             const char *artist_name);
+
+/**
+ * Start a radio station seeded by a Last.fm genre tag (e.g. "indie rock").
+ * `tag` is a null-terminated C string.
+ * Emits RadioTracksReady on success, Error on failure.
+ */
+void spotti_play_tag_radio(struct SpottiCore *core, const char *tag);
 
 /**
  * Save the current track to Liked Songs.

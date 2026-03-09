@@ -148,6 +148,26 @@ struct NowPlayingFullView: View {
                     .foregroundStyle(.white.opacity(0.7))
                     .lineLimit(1)
                     .id(track.id + "_artist")
+
+                if !engine.currentTrackTags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(engine.currentTrackTags, id: \.self) { tag in
+                                Button(tag) {
+                                    engine.playTagRadio(tag: tag)
+                                }
+                                .font(.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(.ultraThinMaterial, in: Capsule())
+                                .foregroundStyle(.white.opacity(0.9))
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 4)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
             }
         }
         .padding(.horizontal, 40)

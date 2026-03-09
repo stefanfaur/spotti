@@ -5,6 +5,7 @@ struct ArtistDetailView: View {
     @EnvironmentObject private var engine: SpottiEngine
     @EnvironmentObject private var router: Router
     @EnvironmentObject private var theme: ThemeEngine
+    @State private var bioExpanded = false
 
     var body: some View {
         ScrollView {
@@ -12,6 +13,7 @@ struct ArtistDetailView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     artistHeader(artist)
                     albumsSection(artist)
+                    aboutSection(artist)
                 }
             } else {
                 ProgressView("Loading artist...")
@@ -75,6 +77,56 @@ struct ArtistDetailView: View {
                 }
             }
             .padding(.horizontal)
+        }
+    }
+
+    @ViewBuilder
+    private func aboutSection(_ artist: ArtistDetail) -> some View {
+        if artist.bio != nil || !artist.lastfmTags.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Divider().padding(.horizontal)
+
+                if !artist.lastfmTags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(artist.lastfmTags, id: \.self) { tag in
+                                Button(tag) {
+                                    engine.playTagRadio(tag: tag)
+                                }
+                                .font(.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(.quaternary, in: Capsule())
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+
+                if let bio = artist.bio {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("About")
+                            .font(.title2.bold())
+                            .padding(.horizontal)
+
+                        Text(bio)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(bioExpanded ? nil : 3)
+                            .padding(.horizontal)
+
+                        Button(bioExpanded ? "Show less" : "Show more") {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                bioExpanded.toggle()
+                            }
+                        }
+                        .font(.caption)
+                        .padding(.horizontal)
+                    }
+                }
+            }
+            .padding(.bottom)
         }
     }
 }

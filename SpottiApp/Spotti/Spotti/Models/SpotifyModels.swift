@@ -98,12 +98,28 @@ struct AlbumDetail: Codable {
     let releaseDate: String?
     let tracks: [TrackSummary]
     let totalTracks: UInt32
+    let wiki: String?
+    let lastfmTags: [String]
 
     enum CodingKeys: String, CodingKey {
-        case id, name, artist, tracks
+        case id, name, artist, tracks, wiki
         case imageUrl = "image_url"
         case releaseDate = "release_date"
         case totalTracks = "total_tracks"
+        case lastfmTags = "lastfm_tags"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        artist = try c.decode(String.self, forKey: .artist)
+        imageUrl = try c.decodeIfPresent(String.self, forKey: .imageUrl)
+        releaseDate = try c.decodeIfPresent(String.self, forKey: .releaseDate)
+        tracks = try c.decode([TrackSummary].self, forKey: .tracks)
+        totalTracks = try c.decode(UInt32.self, forKey: .totalTracks)
+        wiki = try c.decodeIfPresent(String.self, forKey: .wiki)
+        lastfmTags = (try? c.decode([String].self, forKey: .lastfmTags)) ?? []
     }
 }
 
@@ -113,11 +129,25 @@ struct ArtistDetail: Codable {
     let imageUrl: String?
     let followerCount: UInt32
     let albums: [AlbumSummary]
+    let bio: String?
+    let lastfmTags: [String]
 
     enum CodingKeys: String, CodingKey {
-        case id, name, albums
+        case id, name, albums, bio
         case imageUrl = "image_url"
         case followerCount = "follower_count"
+        case lastfmTags = "lastfm_tags"
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        imageUrl = try c.decodeIfPresent(String.self, forKey: .imageUrl)
+        followerCount = try c.decode(UInt32.self, forKey: .followerCount)
+        albums = try c.decode([AlbumSummary].self, forKey: .albums)
+        bio = try c.decodeIfPresent(String.self, forKey: .bio)
+        lastfmTags = (try? c.decode([String].self, forKey: .lastfmTags)) ?? []
     }
 }
 

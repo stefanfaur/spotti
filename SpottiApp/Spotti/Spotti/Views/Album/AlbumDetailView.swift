@@ -4,6 +4,7 @@ struct AlbumDetailView: View {
     let albumId: String
     @EnvironmentObject private var engine: SpottiEngine
     @EnvironmentObject private var theme: ThemeEngine
+    @State private var wikiExpanded = false
 
     var body: some View {
         ScrollView {
@@ -12,6 +13,7 @@ struct AlbumDetailView: View {
                     albumHeader(album)
                     Divider().padding(.horizontal)
                     trackList(album)
+                    aboutSection(album)
                 }
             } else {
                 ProgressView("Loading album...")
@@ -89,5 +91,55 @@ struct AlbumDetailView: View {
     private func playAll(_ album: AlbumDetail) {
         let uris = album.tracks.map(\.uri)
         engine.loadContext(uris: uris, index: 0)
+    }
+
+    @ViewBuilder
+    private func aboutSection(_ album: AlbumDetail) -> some View {
+        if album.wiki != nil || !album.lastfmTags.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                Divider().padding(.horizontal)
+
+                if !album.lastfmTags.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(album.lastfmTags, id: \.self) { tag in
+                                Button(tag) {
+                                    engine.playTagRadio(tag: tag)
+                                }
+                                .font(.caption)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(.quaternary, in: Capsule())
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal)
+                    }
+                }
+
+                if let wiki = album.wiki {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("About")
+                            .font(.title2.bold())
+                            .padding(.horizontal)
+
+                        Text(wiki)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(wikiExpanded ? nil : 3)
+                            .padding(.horizontal)
+
+                        Button(wikiExpanded ? "Show less" : "Show more") {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                wikiExpanded.toggle()
+                            }
+                        }
+                        .font(.caption)
+                        .padding(.horizontal)
+                    }
+                }
+            }
+            .padding(.bottom)
+        }
     }
 }
