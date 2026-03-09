@@ -74,6 +74,7 @@ pub extern "C" fn spotti_set_lastfm_api_key(core: *mut SpottiCore, api_key: *con
     core.lastfm_api_key = unsafe { CStr::from_ptr(api_key) }
         .to_string_lossy()
         .into_owned();
+    log::info!("[lastfm] API key set (length={})", core.lastfm_api_key.len());
 }
 
 /// Destroy the Spotti core and free all resources.
@@ -966,6 +967,8 @@ pub unsafe extern "C" fn spotti_fetch_track_tags(
     let track = CStr::from_ptr(track_name).to_string_lossy().to_string();
     let artist = CStr::from_ptr(artist_name).to_string_lossy().to_string();
     let lastfm_key = core.lastfm_api_key.clone();
+    log::info!("[lastfm] ffi: spotti_fetch_track_tags called for '{}' by '{}' (key_len={})",
+        track, artist, lastfm_key.len());
     let event_cb = core.event_callback;
     get_runtime().spawn(async move {
         let tags = crate::spotify::track_actions::lastfm_track_top_tags(&track, &artist, &lastfm_key).await;

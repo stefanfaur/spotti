@@ -91,6 +91,7 @@ class SpottiEngine: ObservableObject {
         lastfmApiKey.withCString { ptr in
             spotti_set_lastfm_api_key(corePtr, ptr)
         }
+        print("[lastfm] Last.fm API key passed to core (length: \(lastfmApiKey.count))")
 
         spotti_set_event_callback(corePtr) { jsonPtr in
             guard let jsonPtr = jsonPtr else { return }
@@ -362,7 +363,11 @@ class SpottiEngine: ObservableObject {
     }
 
     func fetchTrackTags(track: SpottiTrackInfo) {
-        guard let core = corePtr else { return }
+        guard let core = corePtr else {
+            print("[lastfm] fetchTrackTags: corePtr is nil, skipping")
+            return
+        }
+        print("[lastfm] fetchTrackTags: requesting tags for '\(track.title)' by '\(track.artist)'")
         track.title.withCString { titlePtr in
             track.artist.withCString { artistPtr in
                 spotti_fetch_track_tags(core, titlePtr, artistPtr)

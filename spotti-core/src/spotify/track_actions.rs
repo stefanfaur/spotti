@@ -141,7 +141,7 @@ async fn lastfm_similar_artists(
         urlencoding::encode(artist),
         api_key,
     );
-    log::info!("[radio] Last.fm request: artist.getSimilar for '{}'", artist);
+    log::info!("[lastfm] artist.getSimilar request for '{}'", artist);
 
     let response = reqwest::get(&url)
         .await
@@ -155,7 +155,7 @@ async fn lastfm_similar_artists(
 
     if let Some(err) = json.get("error") {
         let msg = json.get("message").and_then(|m| m.as_str()).unwrap_or("unknown");
-        log::error!("[radio] Last.fm API error {}: {}", err, msg);
+        log::error!("[lastfm] artist.getSimilar API error {}: {}", err, msg);
         return Err(TrackActionError::ApiError(format!("Last.fm error {}: {}", err, msg)));
     }
 
@@ -181,7 +181,7 @@ async fn lastfm_similar_tracks(
         urlencoding::encode(artist),
         api_key,
     );
-    log::info!("[radio] Last.fm request: track.getSimilar for '{}' by '{}'", track, artist);
+    log::info!("[lastfm] track.getSimilar request for '{}' by '{}'", track, artist);
 
     let response = reqwest::get(&url)
         .await
@@ -195,7 +195,7 @@ async fn lastfm_similar_tracks(
 
     if let Some(err) = json.get("error") {
         let msg = json.get("message").and_then(|m| m.as_str()).unwrap_or("unknown");
-        log::error!("[radio] Last.fm track.getSimilar error {}: {}", err, msg);
+        log::error!("[lastfm] track.getSimilar API error {}: {}", err, msg);
         return Err(TrackActionError::ApiError(format!("Last.fm error {}: {}", err, msg)));
     }
 
@@ -237,15 +237,37 @@ pub async fn lastfm_artist_info(
     artist: &str,
     api_key: &str,
 ) -> Option<(String, Vec<String>)> {
+    log::info!("[lastfm] artist.getInfo request for '{}'", artist);
     let url = format!(
         "https://ws.audioscrobbler.com/2.0/?method=artist.getInfo&artist={}&api_key={}&autocorrect=1&format=json",
         urlencoding::encode(artist),
         api_key,
     );
-    let response = reqwest::get(&url).await.ok()?.text().await.ok()?;
-    let json: serde_json::Value = serde_json::from_str(&response).ok()?;
+    let response = match reqwest::get(&url).await {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("[lastfm] artist.getInfo HTTP request failed: {}", e);
+            return None;
+        }
+    };
+    let text = match response.text().await {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("[lastfm] artist.getInfo failed to read response body: {}", e);
+            return None;
+        }
+    };
+    let json: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(j) => j,
+        Err(e) => {
+            log::warn!("[lastfm] artist.getInfo JSON parse failed: {}", e);
+            return None;
+        }
+    };
 
-    if json.get("error").is_some() {
+    if let Some(err) = json.get("error") {
+        let msg = json.get("message").and_then(|m| m.as_str()).unwrap_or("unknown");
+        log::warn!("[lastfm] artist.getInfo API error {}: {}", err, msg);
         return None;
     }
 
@@ -256,7 +278,10 @@ pub async fn lastfm_artist_info(
         .unwrap_or(&bio_raw)
         .trim()
         .to_string();
-    let bio = if bio.is_empty() { return None; } else { bio };
+    let bio = if bio.is_empty() {
+        log::info!("[lastfm] artist.getInfo: no bio found for '{}'", artist);
+        return None;
+    } else { bio };
 
     let tags: Vec<String> = json["artist"]["tags"]["tag"]
         .as_array()
@@ -266,6 +291,7 @@ pub async fn lastfm_artist_info(
         .take(5)
         .collect();
 
+    log::info!("[lastfm] artist.getInfo for '{}': bio_len={}, tags={:?}", artist, bio.len(), tags);
     Some((bio, tags))
 }
 
@@ -275,16 +301,38 @@ pub async fn lastfm_album_info(
     artist: &str,
     api_key: &str,
 ) -> Option<(String, Vec<String>)> {
+    log::info!("[lastfm] album.getInfo request for '{}' by '{}'", album, artist);
     let url = format!(
         "https://ws.audioscrobbler.com/2.0/?method=album.getInfo&album={}&artist={}&api_key={}&autocorrect=1&format=json",
         urlencoding::encode(album),
         urlencoding::encode(artist),
         api_key,
     );
-    let response = reqwest::get(&url).await.ok()?.text().await.ok()?;
-    let json: serde_json::Value = serde_json::from_str(&response).ok()?;
+    let response = match reqwest::get(&url).await {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("[lastfm] album.getInfo HTTP request failed: {}", e);
+            return None;
+        }
+    };
+    let text = match response.text().await {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("[lastfm] album.getInfo failed to read response body: {}", e);
+            return None;
+        }
+    };
+    let json: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(j) => j,
+        Err(e) => {
+            log::warn!("[lastfm] album.getInfo JSON parse failed: {}", e);
+            return None;
+        }
+    };
 
-    if json.get("error").is_some() {
+    if let Some(err) = json.get("error") {
+        let msg = json.get("message").and_then(|m| m.as_str()).unwrap_or("unknown");
+        log::warn!("[lastfm] album.getInfo API error {}: {}", err, msg);
         return None;
     }
 
@@ -295,7 +343,10 @@ pub async fn lastfm_album_info(
         .unwrap_or(&wiki_raw)
         .trim()
         .to_string();
-    let wiki = if wiki.is_empty() { return None; } else { wiki };
+    let wiki = if wiki.is_empty() {
+        log::info!("[lastfm] album.getInfo: no wiki found for '{}' by '{}'", album, artist);
+        return None;
+    } else { wiki };
 
     let tags: Vec<String> = json["album"]["tags"]["tag"]
         .as_array()
@@ -305,6 +356,7 @@ pub async fn lastfm_album_info(
         .take(5)
         .collect();
 
+    log::info!("[lastfm] album.getInfo for '{}' by '{}': wiki_len={}, tags={:?}", album, artist, wiki.len(), tags);
     Some((wiki, tags))
 }
 
@@ -314,9 +366,9 @@ pub async fn lastfm_track_top_tags(
     artist: &str,
     api_key: &str,
 ) -> Vec<String> {
-    log::info!("[track-tags] fetching tags for track='{}' artist='{}'", track, artist);
+    log::info!("[lastfm] track.getTopTags request for track='{}' artist='{}'", track, artist);
     if api_key.is_empty() {
-        log::warn!("[track-tags] Last.fm API key is empty, skipping tag fetch");
+        log::warn!("[lastfm] API key is empty, skipping track.getTopTags");
         return vec![];
     }
     let url = format!(
@@ -328,27 +380,27 @@ pub async fn lastfm_track_top_tags(
     let response = match reqwest::get(&url).await {
         Ok(r) => r,
         Err(e) => {
-            log::warn!("[track-tags] HTTP request failed: {}", e);
+            log::warn!("[lastfm] track.getTopTags HTTP request failed: {}", e);
             return vec![];
         }
     };
     let text = match response.text().await {
         Ok(t) => t,
         Err(e) => {
-            log::warn!("[track-tags] Failed to read response body: {}", e);
+            log::warn!("[lastfm] track.getTopTags failed to read response body: {}", e);
             return vec![];
         }
     };
     let json: serde_json::Value = match serde_json::from_str(&text) {
         Ok(j) => j,
         Err(e) => {
-            log::warn!("[track-tags] Failed to parse JSON: {}", e);
+            log::warn!("[lastfm] track.getTopTags JSON parse failed: {}", e);
             return vec![];
         }
     };
 
     if json.get("error").is_some() {
-        log::warn!("[track-tags] Last.fm API error: {}", json);
+        log::warn!("[lastfm] track.getTopTags API error: {}", json);
         return vec![];
     }
 
@@ -359,7 +411,7 @@ pub async fn lastfm_track_top_tags(
         .filter_map(|t| t["name"].as_str().map(String::from))
         .take(5)
         .collect();
-    log::info!("[track-tags] got {} tags: {:?}", tags.len(), tags);
+    log::info!("[lastfm] track.getTopTags result: {} tags: {:?}", tags.len(), tags);
     tags
 }
 
@@ -370,7 +422,7 @@ pub async fn get_tag_recommendations(
     tag: &str,
     lastfm_api_key: &str,
 ) -> Result<RadioResult, TrackActionError> {
-    log::info!("[tag-radio] get_tag_recommendations for tag='{}'", tag);
+    log::info!("[lastfm] tag.getTopTracks request for tag='{}'", tag);
 
     let url = format!(
         "https://ws.audioscrobbler.com/2.0/?method=tag.getTopTracks&tag={}&api_key={}&limit=50&format=json",
@@ -404,7 +456,7 @@ pub async fn get_tag_recommendations(
         })
         .collect();
 
-    log::info!("[tag-radio] tag.getTopTracks returned {} results", pairs.len());
+    log::info!("[lastfm] tag.getTopTracks returned {} results", pairs.len());
 
     let mut tracks: Vec<TrackInfo> = Vec::new();
     for (t_name, t_artist) in pairs.iter().take(40) {
@@ -416,7 +468,7 @@ pub async fn get_tag_recommendations(
         }
     }
 
-    log::info!("[tag-radio] collected {} Spotify tracks", tracks.len());
+    log::info!("[lastfm] tag.getTopTracks resolved {} Spotify tracks for tag='{}'", tracks.len(), tag);
 
     if tracks.is_empty() {
         return Err(TrackActionError::Empty);

@@ -70,6 +70,8 @@ pub async fn fetch_album(
         &artist_name,
         lastfm_api_key,
     ).await;
+    log::info!("[lastfm] fetch_album: lastfm_album_info for '{}' by '{}' returned {}",
+        album_name, artist_name, if lastfm_result.is_some() { "Some" } else { "None" });
 
     let image_url = album.images.first().map(|img| img.url.as_str());
     let tracks: Vec<TrackSummary> = album
@@ -120,6 +122,8 @@ pub async fn fetch_artist(
         client.artist_albums_manual(id2, [], None, Some(50), None),
         crate::spotify::track_actions::lastfm_artist_info(&artist_name, lastfm_api_key),
     );
+    log::info!("[lastfm] fetch_artist: lastfm_artist_info for '{}' returned {}",
+        artist_name, if lastfm_result.is_some() { "Some" } else { "None" });
 
     let albums_page = albums_result.map_err(|e| DetailError::ApiError(e.to_string()))?;
     let albums: Vec<AlbumSummary> = albums_page
