@@ -222,14 +222,14 @@ void spotti_play_playlist_radio(struct SpottiCore *core,
 /**
  * Fetch crowd-sourced genre tags for a track from Last.fm.
  * `track_name` and `artist_name` are null-terminated C strings.
- * Emits TrackTagsReady { tags: [...] } asynchronously.
+ * Emits TrackTagsReady { tags: Vec<String> } asynchronously.
  */
 void spotti_fetch_track_tags(struct SpottiCore *core,
                              const char *track_name,
                              const char *artist_name);
 
 /**
- * Start a radio station seeded by a Last.fm genre tag (e.g. "indie rock").
+ * Start a radio station based on a Last.fm genre tag (e.g. "indie rock").
  * `tag` is a null-terminated C string.
  * Emits RadioTracksReady on success, Error on failure.
  */

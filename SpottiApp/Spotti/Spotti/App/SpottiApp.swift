@@ -11,7 +11,7 @@ struct SpottiApp: App {
     @Environment(\.dismissWindow) private var dismissWindow
 
     init() {
-        SpottiEngine.shared.initialize(clientId: SpottiConfig.spotifyClientId)
+        SpottiEngine.shared.initialize(clientId: SpottiConfig.spotifyClientId, lastfmApiKey: SpottiConfig.lastfmApiKey)
     }
 
     var body: some Scene {

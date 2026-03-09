@@ -629,7 +629,10 @@ class SpottiEngine: ObservableObject {
 
         case "TrackTagsReady":
             if let tagsArray = dict["tags"] as? [String] {
+                print("[Spotti] TrackTagsReady: \(tagsArray.count) tags: \(tagsArray)")
                 currentTrackTags = tagsArray
+            } else {
+                print("[Spotti] TrackTagsReady: failed to parse tags from dict: \(dict)")
             }
 
         case "ArtCached":
