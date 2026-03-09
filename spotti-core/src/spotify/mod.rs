@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod scoring;
 pub mod track_actions;
 pub mod convert;
 pub mod detail;

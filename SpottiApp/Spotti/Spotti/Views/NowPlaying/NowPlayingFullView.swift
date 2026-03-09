@@ -174,6 +174,16 @@ struct NowPlayingFullView: View {
                                 .background(.ultraThinMaterial, in: Capsule())
                                 .foregroundStyle(.white.opacity(0.9))
                                 .buttonStyle(.plain)
+                                .overlay {
+                                    if engine.isLoading {
+                                        Capsule()
+                                            .fill(.ultraThinMaterial)
+                                            .overlay {
+                                                ProgressView()
+                                                    .controlSize(.mini)
+                                            }
+                                    }
+                                }
                             }
                         }
                         .padding(.horizontal, 4)

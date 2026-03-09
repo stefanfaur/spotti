@@ -8,8 +8,21 @@ struct RadioQueueView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 radioHeader
-                Divider().padding(.horizontal)
-                trackList
+
+                if engine.isLoading && engine.radioTracks.isEmpty {
+                    VStack(spacing: 16) {
+                        ProgressView()
+                            .controlSize(.large)
+                        Text("Generating your radio...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 60)
+                } else {
+                    Divider().padding(.horizontal)
+                    trackList
+                }
             }
         }
     }

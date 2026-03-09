@@ -383,6 +383,12 @@ class SpottiEngine: ObservableObject {
         }
     }
 
+    func smartMix() {
+        guard let core = corePtr else { return }
+        isLoading = true
+        spotti_smart_mix(core)
+    }
+
     func toggleLike() {
         guard let core = corePtr, let track = currentTrack else { return }
         let id = track.uri ?? track.id

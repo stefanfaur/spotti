@@ -1015,6 +1015,43 @@ pub unsafe extern "C" fn spotti_play_tag_radio(
     }
 }
 
+/// Generate a "Smart Mix" radio from the user's recently played tracks.
+/// Emits RadioTracksReady on success, Error on failure.
+#[no_mangle]
+pub unsafe extern "C" fn spotti_smart_mix(core: *mut SpottiCore) {
+    let core = &*core;
+    log::info!("[ffi] spotti_smart_mix called");
+    let lastfm_key = core.lastfm_api_key.clone();
+    if let Some(auth) = &core.auth {
+        if let Some(client) = auth.rspotify() {
+            let client = client.clone();
+            let event_cb = core.event_callback;
+            get_runtime().spawn(async move {
+                match crate::spotify::track_actions::get_smart_mix(&client, &lastfm_key).await {
+                    Ok(result) => {
+                        log::info!("[ffi] spotti_smart_mix: success, {} tracks", result.tracks.len());
+                        let uris: Vec<String> = result.tracks.iter().map(|t| t.uri.clone()).collect();
+                        let tracks_json = serde_json::to_string(&result.tracks).unwrap_or_default();
+                        emit_event(event_cb, &PlayerEvent::RadioTracksReady {
+                            name: result.name,
+                            uris,
+                            tracks_json,
+                        });
+                    }
+                    Err(e) => {
+                        log::error!("[ffi] spotti_smart_mix error: {}", e);
+                        emit_event(event_cb, &PlayerEvent::Error { message: e.to_string() });
+                    }
+                }
+            });
+        } else {
+            log::error!("[ffi] spotti_smart_mix: no rspotify client");
+        }
+    } else {
+        log::error!("[ffi] spotti_smart_mix: not authenticated");
+    }
+}
+
 // ── Track Actions ──
 
 /// Save the current track to Liked Songs.

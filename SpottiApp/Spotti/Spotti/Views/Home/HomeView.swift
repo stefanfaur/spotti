@@ -19,6 +19,9 @@ struct HomeView: View {
                     .padding(.horizontal)
                     .padding(.top)
 
+                // Smart Mix card
+                smartMixSection
+
                 if let library = engine.libraryContent {
                     if !library.playlists.isEmpty {
                         sectionHeader("Your Playlists")
@@ -56,6 +59,58 @@ struct HomeView: View {
             if engine.libraryContent == nil {
                 engine.fetchLibrary()
             }
+        }
+    }
+
+    @ViewBuilder
+    private var smartMixSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader("Made for You")
+
+            Button {
+                engine.smartMix()
+                router.navigate(to: .radioQueue)
+            } label: {
+                HStack(spacing: 16) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.purple, .blue, .cyan],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 28))
+                            .foregroundStyle(.white)
+                    }
+                    .frame(width: 72, height: 72)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Smart Mix")
+                            .font(.headline)
+                        Text("A personalized mix based on your recent listening")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+
+                    if engine.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding()
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal)
         }
     }
 

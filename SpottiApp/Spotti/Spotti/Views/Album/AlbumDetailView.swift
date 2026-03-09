@@ -111,6 +111,16 @@ struct AlbumDetailView: View {
                                 .padding(.vertical, 4)
                                 .background(.quaternary, in: Capsule())
                                 .buttonStyle(.plain)
+                                .overlay {
+                                    if engine.isLoading {
+                                        Capsule()
+                                            .fill(.quaternary)
+                                            .overlay {
+                                                ProgressView()
+                                                    .controlSize(.mini)
+                                            }
+                                    }
+                                }
                             }
                         }
                         .padding(.horizontal)

@@ -40,6 +40,9 @@ rand = "0.9"
 # System media controls (Now Playing / media keys)
 souvlaki = "0.8"
 
+# Lazy statics
+once_cell = "1"
+
 # Error handling
 thiserror = "2"
 

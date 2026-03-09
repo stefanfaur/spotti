@@ -1,9 +1,16 @@
+use std::collections::HashMap;
+
+use once_cell::sync::Lazy;
 use rspotify::clients::{BaseClient, OAuthClient};
 use rspotify::model::idtypes::{Id, PlayableId};
 use rspotify::model::{FullTrack, Market, PlaylistId, SearchResult, SearchType, TrackId};
 use rspotify::AuthCodePkceSpotify;
 
 use crate::player::types::TrackInfo;
+
+/// Session-scoped artist tag cache. Cleared only on app restart.
+static ARTIST_TAG_CACHE: Lazy<std::sync::Mutex<HashMap<String, Vec<String>>>> =
+    Lazy::new(|| std::sync::Mutex::new(HashMap::new()));
 
 #[derive(Debug, thiserror::Error)]
 pub enum TrackActionError {
@@ -22,30 +29,36 @@ pub struct RadioResult {
 
 /// Build a radio playlist seeded by up to 5 track IDs.
 ///
-/// For single-seed (song radio), uses Last.fm `track.getSimilar` for more targeted results.
-/// Falls back to `artist.getSimilar` if not enough tracks, or for multi-seed (playlist radio).
+/// Pipeline: gather candidates (Last.fm similar tracks + similar artists' top tracks),
+/// build a SeedProfile (tags + audio features), score candidates, return top 30.
 pub async fn get_recommendations(
     client: &AuthCodePkceSpotify,
     seed_track_ids: &[String],
     lastfm_api_key: &str,
     radio_name: Option<String>,
 ) -> Result<RadioResult, TrackActionError> {
-    log::info!("[radio] get_recommendations called with seeds: {:?}", seed_track_ids);
+    log::info!("[radio] get_recommendations called with {} seeds: {:?}",
+        seed_track_ids.len(), seed_track_ids);
 
-    // Resolve artist name and track name from first seed track
-    let mut artist_name: Option<String> = None;
-    let mut seed_track_name: Option<String> = None;
-    for id_str in seed_track_ids.iter().take(3) {
+    // 1. Resolve track info for each seed (need artist names + track names)
+    let mut seed_artists: Vec<String> = Vec::new();
+    let mut seed_track_names: Vec<(String, String)> = Vec::new(); // (track_name, artist_name)
+    let mut first_track_name: Option<String> = None;
+    let mut first_artist_name: Option<String> = None;
+
+    for id_str in seed_track_ids.iter().take(5) {
         match TrackId::from_id_or_uri(id_str) {
             Ok(tid) => {
                 log::info!("[radio] fetching track info for id={}", id_str);
                 match client.track(tid, None).await {
                     Ok(full_track) => {
                         if let Some(a) = full_track.artists.first() {
-                            artist_name = Some(a.name.clone());
-                            seed_track_name = Some(full_track.name.clone());
-                            log::info!("[radio] resolved artist '{}'", a.name);
-                            break;
+                            seed_artists.push(a.name.clone());
+                            seed_track_names.push((full_track.name.clone(), a.name.clone()));
+                            if first_track_name.is_none() {
+                                first_track_name = Some(full_track.name.clone());
+                                first_artist_name = Some(a.name.clone());
+                            }
                         }
                     }
                     Err(e) => log::warn!("[radio] client.track() failed for {}: {}", id_str, e),
@@ -55,40 +68,58 @@ pub async fn get_recommendations(
         }
     }
 
-    let artist_name = artist_name.ok_or_else(|| {
-        TrackActionError::ApiError("could not resolve artist name from seed track".to_string())
-    })?;
+    if seed_artists.is_empty() {
+        return Err(TrackActionError::ApiError(
+            "could not resolve any artist names from seed tracks".to_string(),
+        ));
+    }
 
     let name = radio_name.unwrap_or_else(|| {
-        format!("{} Radio", seed_track_name.as_deref().unwrap_or(&artist_name))
+        format!("{} Radio", first_track_name.as_deref().unwrap_or(
+            first_artist_name.as_deref().unwrap_or("Unknown")))
     });
 
-    let mut tracks: Vec<TrackInfo> = Vec::new();
+    // 2. Build seed profile (audio features + tags)
+    let profile = crate::spotify::scoring::build_seed_profile(
+        client,
+        seed_track_ids,
+        &seed_artists,
+        lastfm_api_key,
+    )
+    .await;
 
-    // Song radio (single seed): use track.getSimilar for more targeted results
-    if seed_track_ids.len() == 1 {
-        if let Some(ref track_name) = seed_track_name {
-            let similar = lastfm_similar_tracks(track_name, &artist_name, lastfm_api_key).await
-                .unwrap_or_default();
-            log::info!("[radio] track.getSimilar returned {} results", similar.len());
+    // 3. Gather candidates
+    let mut candidates: Vec<TrackInfo> = Vec::new();
+    let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-            for (t_name, t_artist) in similar.iter().take(30) {
-                if let Some(info) = search_track_on_spotify(client, t_name, t_artist).await {
-                    tracks.push(info);
+    // 3a. track.getSimilar for each seed track
+    for (track_name, artist_name) in &seed_track_names {
+        let similar = lastfm_similar_tracks(track_name, artist_name, lastfm_api_key)
+            .await
+            .unwrap_or_default();
+        log::info!("[radio] track.getSimilar for '{}': {} results", track_name, similar.len());
+
+        for (t_name, t_artist) in similar.iter().take(30) {
+            if let Some(info) = search_track_on_spotify(client, t_name, t_artist).await {
+                if seen_ids.insert(info.id.clone()) {
+                    candidates.push(info);
                 }
             }
-            log::info!("[radio] after track.getSimilar search: {} tracks", tracks.len());
         }
     }
 
-    // Fall back to artist.getSimilar if we don't have enough tracks
-    // (also the primary path for playlist radio with multiple seeds)
-    if tracks.len() < 10 {
-        log::info!("[radio] topping up with artist.getSimilar (have {} tracks)", tracks.len());
-        let similar_names = lastfm_similar_artists(&artist_name, lastfm_api_key).await?;
-        log::info!("[radio] Last.fm returned {} similar artists", similar_names.len());
+    // 3b. artist.getSimilar for each unique seed artist -> top tracks
+    let mut seen_seed_artists: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for artist_name in &seed_artists {
+        if !seen_seed_artists.insert(artist_name.to_lowercase()) {
+            continue;
+        }
+        let similar_names = lastfm_similar_artists(artist_name, lastfm_api_key)
+            .await
+            .unwrap_or_default();
+        log::info!("[radio] artist.getSimilar for '{}': {} results", artist_name, similar_names.len());
 
-        for similar_name in similar_names.iter().take(8) {
+        for similar_name in similar_names.iter().take(5) {
             let query = format!("artist:{}", similar_name);
             match client
                 .search(&query, SearchType::Artist, None, None, Some(1), None)
@@ -96,10 +127,16 @@ pub async fn get_recommendations(
             {
                 Ok(SearchResult::Artists(page)) => {
                     if let Some(spotify_artist) = page.items.into_iter().next() {
-                        match client.artist_top_tracks(spotify_artist.id, Some(Market::FromToken)).await {
+                        match client
+                            .artist_top_tracks(spotify_artist.id, Some(Market::FromToken))
+                            .await
+                        {
                             Ok(top_tracks) => {
-                                for track in top_tracks.iter().take(5) {
-                                    tracks.push(full_track_to_info(track));
+                                for track in top_tracks.iter().take(3) {
+                                    let info = full_track_to_info(track);
+                                    if seen_ids.insert(info.id.clone()) {
+                                        candidates.push(info);
+                                    }
                                 }
                             }
                             Err(e) => log::warn!("[radio] artist_top_tracks failed: {}", e),
@@ -112,11 +149,30 @@ pub async fn get_recommendations(
         }
     }
 
-    log::info!("[radio] total radio tracks collected: {}", tracks.len());
+    log::info!("[radio] gathered {} unique candidates", candidates.len());
+
+    if candidates.is_empty() {
+        return Err(TrackActionError::Empty);
+    }
+
+    // 4. Score and rank candidates
+    let scored = crate::spotify::scoring::score_candidates(
+        client,
+        &candidates,
+        &profile,
+        lastfm_api_key,
+    )
+    .await;
+
+    // Take top 30
+    let tracks: Vec<TrackInfo> = scored.into_iter().take(30).map(|s| s.track).collect();
+
+    log::info!("[radio] final radio queue: {} tracks", tracks.len());
 
     if tracks.is_empty() {
         return Err(TrackActionError::Empty);
     }
+
     Ok(RadioResult { name, tracks })
 }
 
@@ -394,6 +450,39 @@ pub async fn lastfm_track_top_tags(
     )).await
 }
 
+/// Fetch top tags for an artist via Last.fm, with in-memory session cache.
+/// Returns up to 10 tags (lowercased for consistent matching).
+pub async fn lastfm_artist_top_tags_cached(
+    artist: &str,
+    api_key: &str,
+) -> Vec<String> {
+    let key = artist.to_lowercase();
+
+    // Check cache
+    if let Ok(cache) = ARTIST_TAG_CACHE.lock() {
+        if let Some(tags) = cache.get(&key) {
+            log::info!("[lastfm] artist tag cache HIT for '{}'", artist);
+            return tags.clone();
+        }
+    }
+
+    log::info!("[lastfm] artist tag cache MISS for '{}', fetching", artist);
+    let url = format!(
+        "https://ws.audioscrobbler.com/2.0/?method=artist.getTopTags&artist={}&api_key={}&autocorrect=1&format=json",
+        urlencoding::encode(artist),
+        api_key,
+    );
+    let tags = lastfm_get_top_tags("artist.getTopTags", &url).await;
+    let tags: Vec<String> = tags.into_iter().take(10).map(|t| t.to_lowercase()).collect();
+
+    // Store in cache
+    if let Ok(mut cache) = ARTIST_TAG_CACHE.lock() {
+        cache.insert(key, tags.clone());
+    }
+
+    tags
+}
+
 /// Shared helper: fetch top tags from a Last.fm getTopTags endpoint.
 async fn lastfm_get_top_tags(method: &str, url: &str) -> Vec<String> {
     let response = match reqwest::get(url).await {
@@ -505,6 +594,73 @@ fn capitalize_first(s: &str) -> String {
         None => String::new(),
         Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
     }
+}
+
+/// Build a "Smart Mix" radio from the user's recently played tracks.
+///
+/// 1. Fetch recently played (up to 50 tracks) via Spotify Web API.
+/// 2. Group by artist, pick one track from each of the top 5 most-played artists.
+/// 3. Run the standard scoring pipeline with those 5 seeds.
+pub async fn get_smart_mix(
+    client: &AuthCodePkceSpotify,
+    lastfm_api_key: &str,
+) -> Result<RadioResult, TrackActionError> {
+    log::info!("[smart_mix] fetching recently played tracks");
+
+    // Fetch recently played
+    let history = client
+        .current_user_recently_played(Some(50), None)
+        .await
+        .map_err(|e| TrackActionError::ApiError(format!("recently-played failed: {}", e)))?;
+
+    let items = history.items;
+    log::info!("[smart_mix] got {} recently played items", items.len());
+
+    if items.is_empty() {
+        return Err(TrackActionError::ApiError(
+            "no recently played tracks found".to_string(),
+        ));
+    }
+
+    // Group by artist, count plays
+    let mut artist_counts: HashMap<String, Vec<&rspotify::model::PlayHistory>> =
+        HashMap::new();
+    for item in &items {
+        let artist_name = item
+            .track
+            .artists
+            .first()
+            .map(|a| a.name.clone())
+            .unwrap_or_default();
+        artist_counts.entry(artist_name).or_default().push(item);
+    }
+
+    // Sort artists by play count descending, take top 5
+    let mut artist_sorted: Vec<(String, Vec<&rspotify::model::PlayHistory>)> =
+        artist_counts.into_iter().collect();
+    artist_sorted.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+
+    let mut seed_ids: Vec<String> = Vec::new();
+    for (artist, plays) in artist_sorted.iter().take(5) {
+        if let Some(play) = plays.first() {
+            if let Some(ref id) = play.track.id {
+                seed_ids.push(id.to_string());
+                log::info!("[smart_mix] seed: '{}' by '{}' (played {} times)",
+                    play.track.name, artist, plays.len());
+            }
+        }
+    }
+
+    if seed_ids.is_empty() {
+        return Err(TrackActionError::ApiError(
+            "could not extract seed track IDs from history".to_string(),
+        ));
+    }
+
+    log::info!("[smart_mix] using {} seed tracks", seed_ids.len());
+
+    // Run standard recommendation pipeline
+    get_recommendations(client, &seed_ids, lastfm_api_key, Some("Smart Mix".to_string())).await
 }
 
 /// Save a track to the user's liked songs.
