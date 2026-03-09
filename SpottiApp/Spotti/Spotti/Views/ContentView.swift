@@ -164,9 +164,11 @@ struct MainLayout: View {
                 .padding(.horizontal, 8)
                 .padding(.bottom, 8)
             }
+            .allowsHitTesting(!showNowPlaying)
 
             if showNowPlaying {
                 NowPlayingFullView(showNowPlaying: $showNowPlaying)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
 

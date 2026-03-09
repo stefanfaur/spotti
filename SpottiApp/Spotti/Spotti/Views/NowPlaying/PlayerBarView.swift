@@ -29,35 +29,33 @@ struct PlayerBarView: View {
     @ViewBuilder
     private var trackInfoSection: some View {
         HStack(spacing: 12) {
-            Button {
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-                    showNowPlaying = true
-                }
-            } label: {
-                Group {
-                    if let track = engine.currentTrack,
-                       let urlStr = track.imageUrl,
-                       let url = URL(string: urlStr) {
-                        AsyncImage(url: url) { image in
-                            image
-                                .resizable()
-                                .aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(.quaternary)
-                        }
-                    } else {
+            Group {
+                if let track = engine.currentTrack,
+                   let urlStr = track.imageUrl,
+                   let url = URL(string: urlStr) {
+                    AsyncImage(url: url) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
                         RoundedRectangle(cornerRadius: 6)
                             .fill(.quaternary)
                     }
+                } else {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(.quaternary)
                 }
-                .frame(width: 56, height: 56)
-                .clipShape(.rect(cornerRadius: 8))
-                .shadow(color: theme.dominantColor.opacity(0.4), radius: 12, y: 3)
             }
-            .buttonStyle(.plain)
+            .frame(width: 56, height: 56)
+            .clipShape(.rect(cornerRadius: 8))
+            .shadow(color: theme.dominantColor.opacity(0.4), radius: 12, y: 3)
             .scaleEffect(engine.currentTrack != nil ? 1.0 : 0.95)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: engine.currentTrack?.id)
+            .onTapGesture {
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                    showNowPlaying = true
+                }
+            }
 
             if let track = engine.currentTrack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -299,10 +297,25 @@ struct PlayerBarView: View {
                     .environmentObject(engine)
                     .environmentObject(theme)
             }
+
+            if engine.currentTrack != nil {
+                Button {
+                    withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+                        showNowPlaying = true
+                    }
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .frame(width: 200, alignment: .trailing)
+        .frame(width: 230, alignment: .trailing)
     }
 
     private var volumeIcon: String {

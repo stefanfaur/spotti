@@ -7,18 +7,28 @@ struct NowPlayingFullView: View {
 
     @State private var isSeekBarHovered = false
 
+    private func dismiss() {
+        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
+            showNowPlaying = false
+        }
+    }
+
     var body: some View {
         ZStack {
+            // Full-window tap target to dismiss
+            Color.black.opacity(0.001)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { dismiss() }
+
             backgroundLayer
+                .allowsHitTesting(false)
 
             VStack(spacing: 0) {
+                // Close button row — fixed height so it never collapses
                 HStack {
                     Spacer()
-                    Button {
-                        withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-                            showNowPlaying = false
-                        }
-                    } label: {
+                    Button { dismiss() } label: {
                         Image(systemName: "chevron.down")
                             .font(.title3)
                             .foregroundStyle(.white.opacity(0.8))
@@ -28,10 +38,11 @@ struct NowPlayingFullView: View {
                     }
                     .buttonStyle(.plain)
                     .padding(.trailing, 24)
-                    .padding(.top, 24)
                 }
+                .frame(height: 60)
+                .padding(.top, 8)
 
-                Spacer()
+                Spacer(minLength: 8)
 
                 albumArtView
 
@@ -55,14 +66,15 @@ struct NowPlayingFullView: View {
 
                 secondaryControls
 
-                Spacer()
+                Spacer(minLength: 16)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .ignoresSafeArea()
-        .onExitCommand {
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.85)) {
-                showNowPlaying = false
-            }
+        .onExitCommand { dismiss() }
+        .onKeyPress(.escape) {
+            dismiss()
+            return .handled
         }
     }
 
