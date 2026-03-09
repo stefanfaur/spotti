@@ -314,27 +314,53 @@ pub async fn lastfm_track_top_tags(
     artist: &str,
     api_key: &str,
 ) -> Vec<String> {
+    log::info!("[track-tags] fetching tags for track='{}' artist='{}'", track, artist);
+    if api_key.is_empty() {
+        log::warn!("[track-tags] Last.fm API key is empty, skipping tag fetch");
+        return vec![];
+    }
     let url = format!(
         "https://ws.audioscrobbler.com/2.0/?method=track.getTopTags&track={}&artist={}&api_key={}&autocorrect=1&format=json",
         urlencoding::encode(track),
         urlencoding::encode(artist),
         api_key,
     );
-    let Ok(response) = reqwest::get(&url).await else { return vec![] };
-    let Ok(text) = response.text().await else { return vec![] };
-    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else { return vec![] };
+    let response = match reqwest::get(&url).await {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("[track-tags] HTTP request failed: {}", e);
+            return vec![];
+        }
+    };
+    let text = match response.text().await {
+        Ok(t) => t,
+        Err(e) => {
+            log::warn!("[track-tags] Failed to read response body: {}", e);
+            return vec![];
+        }
+    };
+    let json: serde_json::Value = match serde_json::from_str(&text) {
+        Ok(j) => j,
+        Err(e) => {
+            log::warn!("[track-tags] Failed to parse JSON: {}", e);
+            return vec![];
+        }
+    };
 
     if json.get("error").is_some() {
+        log::warn!("[track-tags] Last.fm API error: {}", json);
         return vec![];
     }
 
-    json["toptags"]["tag"]
+    let tags: Vec<String> = json["toptags"]["tag"]
         .as_array()
         .unwrap_or(&vec![])
         .iter()
         .filter_map(|t| t["name"].as_str().map(String::from))
         .take(5)
-        .collect()
+        .collect();
+    log::info!("[track-tags] got {} tags: {:?}", tags.len(), tags);
+    tags
 }
 
 /// Build a radio playlist from a Last.fm tag/genre (e.g. "indie rock").

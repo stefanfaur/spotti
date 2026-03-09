@@ -30,8 +30,9 @@ serde_json = "1"
 keyring = "3"
 dirs = "6"
 
-# HTTP (album art download)
+# HTTP (album art download, Last.fm)
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+urlencoding = "2"
 
 # Shuffle
 rand = "0.9"
