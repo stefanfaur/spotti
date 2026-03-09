@@ -31,7 +31,7 @@ struct RadioQueueView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textCase(.uppercase)
-                Text("Radio Queue")
+                Text(engine.radioName)
                     .font(.largeTitle.bold())
                 Text("\(engine.radioUris.count) tracks")
                     .font(.subheadline)
@@ -70,8 +70,8 @@ struct RadioQueueView: View {
     @ViewBuilder
     private var trackList: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
-            ForEach(Array(engine.radioUris.enumerated()), id: \.offset) { index, uri in
-                RadioTrackRow(index: index + 1, uri: uri) {
+            ForEach(Array(engine.radioTracks.enumerated()), id: \.offset) { index, track in
+                RadioTrackRow(index: index + 1, track: track) {
                     engine.loadContext(uris: engine.radioUris, index: UInt32(index))
                 }
                 .padding(.horizontal)
@@ -82,18 +82,15 @@ struct RadioQueueView: View {
 
 private struct RadioTrackRow: View {
     let index: Int
-    let uri: String
+    let track: SpottiTrackInfo
     let action: () -> Void
     @EnvironmentObject private var engine: SpottiEngine
     @EnvironmentObject private var theme: ThemeEngine
     @State private var isHovered = false
 
     private var isCurrentTrack: Bool {
-        engine.currentTrack?.uri == uri || engine.currentTrack?.id == trackId
-    }
-
-    private var trackId: String {
-        uri.components(separatedBy: ":").last ?? uri
+        if let uri = track.uri { return engine.currentTrack?.uri == uri }
+        return engine.currentTrack?.id == track.id
     }
 
     var body: some View {
@@ -112,20 +109,26 @@ private struct RadioTrackRow: View {
                 .frame(width: 28, alignment: .trailing)
                 .monospacedDigit()
 
-                ZStack {
-                    RoundedRectangle(cornerRadius: 4).fill(.quaternary)
-                    Image(systemName: "music.note")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                AsyncImage(url: URL(string: track.imageUrl ?? "")) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 4).fill(.quaternary)
+                        Image(systemName: "music.note")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 .frame(width: 40, height: 40)
+                .clipShape(.rect(cornerRadius: 4))
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Track \(index)")
+                    Text(track.title)
                         .font(.body)
                         .foregroundStyle(isCurrentTrack ? theme.effectiveAccentColor : .primary)
                         .fontWeight(isCurrentTrack ? .semibold : .regular)
-                    Text(trackId)
+                        .lineLimit(1)
+                    Text(track.artist)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

@@ -111,7 +111,7 @@ struct PlaylistDetailView: View {
             .shuffled()
             .prefix(5)
             .map { $0.id }
-        engine.playPlaylistRadio(trackIds: Array(seeds))
+        engine.playPlaylistRadio(trackIds: Array(seeds), name: "\(playlist.name) Radio")
     }
 
     private func playFromIndex(_ playlist: PlaylistDetail, index: Int) {
