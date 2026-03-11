@@ -52,10 +52,5 @@ struct MainContentView: View {
             .transition(.opacity.combined(with: .offset(y: 8)))
             .animation(.spring(response: 0.35, dampingFraction: 0.9), value: router.destination)
         }
-        .onChange(of: engine.radioUris) { uris in
-            if !uris.isEmpty {
-                router.navigate(to: .radioQueue)
-            }
-        }
     }
 }

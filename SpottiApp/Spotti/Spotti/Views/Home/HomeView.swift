@@ -68,6 +68,7 @@ struct HomeView: View {
             sectionHeader("Made for You")
 
             Button {
+                engine.clearRadio()
                 engine.smartMix()
                 router.navigate(to: .radioQueue)
             } label: {

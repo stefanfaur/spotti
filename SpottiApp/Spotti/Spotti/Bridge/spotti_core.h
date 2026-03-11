@@ -236,6 +236,12 @@ void spotti_fetch_track_tags(struct SpottiCore *core,
 void spotti_play_tag_radio(struct SpottiCore *core, const char *tag);
 
 /**
+ * Generate a "Smart Mix" radio from the user's recently played tracks.
+ * Emits RadioTracksReady on success, Error on failure.
+ */
+void spotti_smart_mix(struct SpottiCore *core);
+
+/**
  * Save the current track to Liked Songs.
  * `track_id` is a bare Spotify ID or URI.
  * Emits TrackSavedStatus { is_saved: true } on success.

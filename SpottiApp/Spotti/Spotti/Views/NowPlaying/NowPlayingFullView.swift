@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NowPlayingFullView: View {
     @EnvironmentObject private var engine: SpottiEngine
+    @EnvironmentObject private var router: Router
     @EnvironmentObject private var theme: ThemeEngine
     @Binding var showNowPlaying: Bool
 
@@ -166,7 +167,10 @@ struct NowPlayingFullView: View {
                         HStack(spacing: 8) {
                             ForEach(engine.currentTrackTags, id: \.self) { tag in
                                 Button(tag) {
+                                    engine.clearRadio()
                                     engine.playTagRadio(tag: tag)
+                                    router.navigate(to: .radioQueue)
+                                    showNowPlaying = false
                                 }
                                 .font(.caption)
                                 .padding(.horizontal, 10)
@@ -174,8 +178,9 @@ struct NowPlayingFullView: View {
                                 .background(.ultraThinMaterial, in: Capsule())
                                 .foregroundStyle(.white.opacity(0.9))
                                 .buttonStyle(.plain)
+                                .disabled(engine.loadingTagRadio != nil)
                                 .overlay {
-                                    if engine.isLoading {
+                                    if engine.loadingTagRadio == tag {
                                         Capsule()
                                             .fill(.ultraThinMaterial)
                                             .overlay {

@@ -64,6 +64,7 @@ class SpottiEngine: ObservableObject {
     @Published var radioName: String = "Radio"
     @Published var radioTracks: [SpottiTrackInfo] = []
     @Published var currentTrackTags: [String] = []
+    @Published var loadingTagRadio: String? = nil
 
     private var corePtr: OpaquePointer?
     private var positionTimer: Timer?
@@ -378,9 +379,17 @@ class SpottiEngine: ObservableObject {
     func playTagRadio(tag: String) {
         guard let core = corePtr else { return }
         isLoading = true
+        loadingTagRadio = tag
         tag.withCString { ptr in
             spotti_play_tag_radio(core, ptr)
         }
+    }
+
+    func clearRadio() {
+        radioTracks = []
+        radioUris = []
+        radioName = ""
+        loadingTagRadio = nil
     }
 
     func smartMix() {
@@ -535,6 +544,7 @@ class SpottiEngine: ObservableObject {
 
         case "Error":
             isLoading = false
+            loadingTagRadio = nil
             if let msg = dict["message"] as? String {
                 print("[Spotti] ERROR: \(msg)")
                 lastError = msg
@@ -619,6 +629,7 @@ class SpottiEngine: ObservableObject {
 
         case "RadioTracksReady":
             isLoading = false
+            loadingTagRadio = nil
             radioName = dict["name"] as? String ?? "Radio"
             if let urisJson = dict["uris"],
                let data = try? JSONSerialization.data(withJSONObject: urisJson),

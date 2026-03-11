@@ -3,6 +3,7 @@ import SwiftUI
 struct PlaylistDetailView: View {
     let playlistId: String
     @EnvironmentObject private var engine: SpottiEngine
+    @EnvironmentObject private var router: Router
     @EnvironmentObject private var theme: ThemeEngine
 
     var body: some View {
@@ -111,7 +112,9 @@ struct PlaylistDetailView: View {
             .shuffled()
             .prefix(5)
             .map { $0.id }
+        engine.clearRadio()
         engine.playPlaylistRadio(trackIds: Array(seeds), name: "\(playlist.name) Radio")
+        router.navigate(to: .radioQueue)
     }
 
     private func playFromIndex(_ playlist: PlaylistDetail, index: Int) {

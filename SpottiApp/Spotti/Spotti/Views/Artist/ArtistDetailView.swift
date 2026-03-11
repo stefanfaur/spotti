@@ -91,15 +91,18 @@ struct ArtistDetailView: View {
                         HStack(spacing: 8) {
                             ForEach(artist.lastfmTags, id: \.self) { tag in
                                 Button(tag) {
+                                    engine.clearRadio()
                                     engine.playTagRadio(tag: tag)
+                                    router.navigate(to: .radioQueue)
                                 }
                                 .font(.caption)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 4)
                                 .background(.quaternary, in: Capsule())
                                 .buttonStyle(.plain)
+                                .disabled(engine.loadingTagRadio != nil)
                                 .overlay {
-                                    if engine.isLoading {
+                                    if engine.loadingTagRadio == tag {
                                         Capsule()
                                             .fill(.quaternary)
                                             .overlay {

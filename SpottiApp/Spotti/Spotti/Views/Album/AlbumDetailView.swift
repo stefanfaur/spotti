@@ -3,6 +3,7 @@ import SwiftUI
 struct AlbumDetailView: View {
     let albumId: String
     @EnvironmentObject private var engine: SpottiEngine
+    @EnvironmentObject private var router: Router
     @EnvironmentObject private var theme: ThemeEngine
     @State private var wikiExpanded = false
 
@@ -104,15 +105,18 @@ struct AlbumDetailView: View {
                         HStack(spacing: 8) {
                             ForEach(album.lastfmTags, id: \.self) { tag in
                                 Button(tag) {
+                                    engine.clearRadio()
                                     engine.playTagRadio(tag: tag)
+                                    router.navigate(to: .radioQueue)
                                 }
                                 .font(.caption)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 4)
                                 .background(.quaternary, in: Capsule())
                                 .buttonStyle(.plain)
+                                .disabled(engine.loadingTagRadio != nil)
                                 .overlay {
-                                    if engine.isLoading {
+                                    if engine.loadingTagRadio == tag {
                                         Capsule()
                                             .fill(.quaternary)
                                             .overlay {

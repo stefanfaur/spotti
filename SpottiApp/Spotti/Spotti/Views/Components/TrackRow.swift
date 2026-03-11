@@ -5,6 +5,7 @@ struct TrackRow: View {
     let trackNumber: Int?
     let action: () -> Void
     @EnvironmentObject private var engine: SpottiEngine
+    @EnvironmentObject private var router: Router
     @EnvironmentObject private var theme: ThemeEngine
     @State private var isHovered = false
 
@@ -109,7 +110,9 @@ struct TrackRow: View {
         .onHover { isHovered = $0 }
         .contextMenu {
             Button {
+                engine.clearRadio()
                 engine.playSongRadio(trackId: track.id)
+                router.navigate(to: .radioQueue)
             } label: {
                 Label("Go to Radio", systemImage: "antenna.radiowaves.left.and.right")
             }
