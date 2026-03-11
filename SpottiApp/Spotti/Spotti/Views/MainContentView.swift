@@ -44,6 +44,8 @@ struct MainContentView: View {
                         .id(id)
                 case .radioQueue:
                     RadioQueueView()
+                case .likedSongs:
+                    LikedSongsView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)

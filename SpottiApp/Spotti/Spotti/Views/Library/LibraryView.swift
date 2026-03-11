@@ -110,9 +110,10 @@ struct LibraryView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 4) {
                 if let library = engine.libraryContent {
-                    ForEach(library.savedTracks) { track in
+                    ForEach(Array(library.savedTracks.enumerated()), id: \.element.id) { index, track in
                         TrackRow(track: track) {
-                            engine.loadTrack(uri: track.uri)
+                            let uris = library.savedTracks.map(\.uri)
+                            engine.loadContext(uris: uris, index: UInt32(index))
                         }
                         .padding(.horizontal)
                     }

@@ -19,6 +19,40 @@ struct SidebarView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
 
+            Button {
+                router.navigate(to: .likedSongs)
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "heart.fill")
+                        .font(.body)
+                        .foregroundStyle(.pink)
+                        .frame(width: 20)
+                    Text("Liked Songs")
+                        .font(.body)
+                    Spacer()
+                    if let library = engine.libraryContent {
+                        Text("\(library.savedTracks.count)")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .background {
+                if case .likedSongs = router.destination {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(theme.effectiveAccentColor.opacity(0.25))
+                        .glassEffect(
+                            .regular.tint(theme.effectiveAccentColor),
+                            in: .rect(cornerRadius: 8)
+                        )
+                }
+            }
+            .padding(.horizontal, 12)
+
             Text("YOUR PLAYLISTS")
                 .font(.caption2)
                 .fontWeight(.semibold)
