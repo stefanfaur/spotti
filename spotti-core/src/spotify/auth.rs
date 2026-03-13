@@ -36,6 +36,7 @@ pub struct AuthManager {
     session: Option<Session>,
     rspotify_client: Option<AuthCodePkceSpotify>,
     cache_dir: PathBuf,
+    cache: Option<Cache>,
 }
 
 impl AuthManager {
@@ -49,6 +50,7 @@ impl AuthManager {
             session: None,
             rspotify_client: None,
             cache_dir,
+            cache: None,
         }
     }
 
@@ -60,6 +62,8 @@ impl AuthManager {
             Some(self.cache_dir.join("librespot/audio")),
             None,
         ).map_err(|e| AuthError::CacheSetup(e.to_string()))?;
+
+        self.cache = Some(cache.clone());
 
         let session_config = SessionConfig::default();
         let session = Session::new(session_config, Some(cache.clone()));
@@ -152,6 +156,11 @@ impl AuthManager {
 
     pub fn rspotify(&self) -> Option<&AuthCodePkceSpotify> {
         self.rspotify_client.as_ref()
+    }
+
+    /// Returns cached librespot Credentials for Spirc initialization.
+    pub fn credentials(&self) -> Option<Credentials> {
+        self.cache.as_ref().and_then(|c| c.credentials())
     }
 
     pub fn username(&self) -> Option<String> {

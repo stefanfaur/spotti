@@ -2,4 +2,4 @@ pub mod engine;
 pub mod types;
 
 pub use engine::PlayerEngine;
-pub use types::{PlayerCommand, PlayerEvent};
+pub use types::{PlayerCommand, PlayerEvent, InitialStateSource};

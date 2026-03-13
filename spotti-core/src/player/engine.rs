@@ -1,3 +1,5 @@
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,6 +8,9 @@ use std::sync::mpsc as std_mpsc;
 use crossbeam_channel::Sender;
 use librespot_core::Session;
 use librespot_core::SpotifyUri;
+use librespot_core::authentication::Credentials;
+use librespot_core::config::DeviceType;
+use librespot_connect::{Spirc, ConnectConfig};
 use librespot_metadata::audio::AudioItem;
 use librespot_playback::audio_backend;
 use librespot_playback::config::{AudioFormat, Bitrate, PlayerConfig};
@@ -19,7 +24,9 @@ use super::types::{PlayerCommand, PlayerEvent, RepeatMode, TrackInfo};
 
 pub struct PlayerEngine {
     player: Arc<Player>,
+    spirc: Option<Spirc>,
     session: Session,
+    credentials: Credentials,
     mixer: Arc<SoftMixer>,
     cmd_rx: mpsc::Receiver<PlayerCommand>,
     event_tx: Sender<PlayerEvent>,
@@ -37,12 +44,13 @@ pub struct PlayerEngine {
 }
 
 impl PlayerEngine {
-    pub fn new(
+    pub async fn new(
         session: Session,
+        credentials: Credentials,
         cmd_rx: mpsc::Receiver<PlayerCommand>,
         event_tx: Sender<PlayerEvent>,
         now_playing_tx: Option<std_mpsc::Sender<NowPlayingCommand>>,
-    ) -> Result<Self, String> {
+    ) -> Result<(Self, Pin<Box<dyn Future<Output = ()> + Send>>), String> {
         let player_config = PlayerConfig {
             bitrate: Bitrate::Bitrate320,
             gapless: true,
@@ -66,9 +74,31 @@ impl PlayerEngine {
             move || backend(None, audio_format),
         );
 
-        Ok(Self {
+        let connect_config = ConnectConfig {
+            name: "Spotti".into(),
+            device_type: DeviceType::Computer,
+            is_group: false,
+            initial_volume: 50 * 655, // ~50% in 0-65535 range
+            disable_volume: false,
+            volume_steps: 64,
+            emit_set_queue_events: false,
+        };
+
+        let (spirc, spirc_task) = Spirc::new(
+            connect_config,
+            session.clone(),
+            credentials.clone(),
+            player.clone(),
+            mixer.clone(),
+        )
+        .await
+        .map_err(|e| format!("Failed to create Spirc: {}", e))?;
+
+        let engine = Self {
             player,
+            spirc: Some(spirc),
             session,
+            credentials,
             mixer,
             cmd_rx,
             event_tx,
@@ -83,7 +113,10 @@ impl PlayerEngine {
             bitrate: Bitrate::Bitrate320,
             consecutive_load_failures: 0,
             session_lost_emitted: false,
-        })
+        };
+
+        let spirc_future: Pin<Box<dyn Future<Output = ()> + Send>> = Box::pin(spirc_task);
+        Ok((engine, spirc_future))
     }
 
     fn update_now_playing(&self, cmd: NowPlayingCommand) {
@@ -93,7 +126,7 @@ impl PlayerEngine {
     }
 
     /// Main run loop. Call this from a spawned tokio task.
-    pub async fn run(mut self) {
+    pub async fn run(mut self, mut spirc_task: Pin<Box<dyn Future<Output = ()> + Send>>) {
         let mut event_channel = self.player.get_player_event_channel();
         let mut health_interval = tokio::time::interval(Duration::from_secs(5));
 
@@ -117,9 +150,23 @@ impl PlayerEngine {
                 _ = health_interval.tick() => {
                     self.check_session_health();
                 }
+                _ = &mut spirc_task => {
+                    log::warn!("Spirc task exited — treating as session loss");
+                    self.spirc = None;
+                    if !self.session_lost_emitted {
+                        self.session_lost_emitted = true;
+                        self.is_playing = false;
+                        let _ = self.event_tx.send(PlayerEvent::SessionLost {
+                            message: "Spotify Connect disconnected".to_string(),
+                        });
+                    }
+                    break;
+                }
             }
         }
-        // Ensure audio is stopped when exiting the run loop for any reason
+        if let Some(ref spirc) = self.spirc {
+            let _ = spirc.shutdown();
+        }
         self.player.stop();
     }
 
@@ -140,27 +187,52 @@ impl PlayerEngine {
         match cmd {
             PlayerCommand::Play => {
                 self.is_playing = true;
-                self.player.play();
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.play();
+                } else {
+                    self.player.play();
+                }
             }
             PlayerCommand::Pause => {
                 self.is_playing = false;
-                self.player.pause();
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.pause();
+                } else {
+                    self.player.pause();
+                }
             }
             PlayerCommand::Toggle => {
                 log::info!("Toggle: is_playing={}", self.is_playing);
                 if self.is_playing {
                     self.is_playing = false;
-                    self.player.pause();
+                    if let Some(ref spirc) = self.spirc {
+                        let _ = spirc.pause();
+                    } else {
+                        self.player.pause();
+                    }
                 } else {
                     self.is_playing = true;
-                    self.player.play();
+                    if let Some(ref spirc) = self.spirc {
+                        let _ = spirc.play();
+                    } else {
+                        self.player.play();
+                    }
                 }
             }
             PlayerCommand::Stop => {
                 self.is_playing = false;
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.pause();
+                }
                 self.player.stop();
             }
-            PlayerCommand::Seek(pos_ms) => self.player.seek(pos_ms),
+            PlayerCommand::Seek(pos_ms) => {
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.set_position_ms(pos_ms);
+                } else {
+                    self.player.seek(pos_ms);
+                }
+            }
             PlayerCommand::Next => {
                 self.consecutive_load_failures = 0;
                 if self.queue_index + 1 < self.queue.len() {
@@ -188,7 +260,11 @@ impl PlayerEngine {
                 self.load_current_track(true);
             }
             PlayerCommand::SetVolume(volume) => {
-                self.mixer.set_volume(volume);
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.set_volume(volume);
+                } else {
+                    self.mixer.set_volume(volume);
+                }
                 let _ = self.event_tx.send(PlayerEvent::VolumeChanged { volume });
             }
             PlayerCommand::SetShuffle(enabled) => {
@@ -222,10 +298,29 @@ impl PlayerEngine {
                             .unwrap_or(0);
                     }
                 }
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.shuffle(enabled);
+                }
                 let _ = self.event_tx.send(PlayerEvent::ShuffleChanged { enabled });
             }
             PlayerCommand::SetRepeat(mode) => {
                 self.repeat = mode;
+                if let Some(ref spirc) = self.spirc {
+                    match mode {
+                        RepeatMode::Off => {
+                            let _ = spirc.repeat(false);
+                            let _ = spirc.repeat_track(false);
+                        }
+                        RepeatMode::Context => {
+                            let _ = spirc.repeat(true);
+                            let _ = spirc.repeat_track(false);
+                        }
+                        RepeatMode::Track => {
+                            let _ = spirc.repeat(false);
+                            let _ = spirc.repeat_track(true);
+                        }
+                    }
+                }
                 let _ = self.event_tx.send(PlayerEvent::RepeatChanged { mode });
             }
             PlayerCommand::SetBitrate(level) => {
@@ -237,13 +332,17 @@ impl PlayerEngine {
             }
             PlayerCommand::Shutdown => {
                 log::info!("PlayerEngine shutting down");
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.shutdown();
+                }
                 self.player.stop();
                 self.is_playing = false;
                 return true;
             }
-            PlayerCommand::Reconnect(new_session) => {
+            PlayerCommand::Reconnect { session: new_session, credentials: new_credentials } => {
                 log::info!("Hot-swapping session on existing player (is_playing={})", self.is_playing);
                 self.session = new_session.clone();
+                self.credentials = new_credentials;
                 self.player.set_session(new_session);
                 self.consecutive_load_failures = 0;
                 self.session_lost_emitted = false;

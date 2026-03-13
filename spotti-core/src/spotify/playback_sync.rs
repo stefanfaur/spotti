@@ -1,5 +1,5 @@
 use rspotify::clients::OAuthClient;
-use rspotify::model::{PlayableItem, RepeatState};
+use rspotify::model::{PlayHistory, PlayableItem, RepeatState};
 use rspotify::prelude::Id;
 use rspotify::AuthCodePkceSpotify;
 
@@ -54,6 +54,35 @@ pub async fn fetch_current_playback(
             device_name: Some(c.device.name),
             shuffle: c.shuffle_state,
             repeat,
+        }
+    }))
+}
+
+/// Fetch the user's most recently played track (single item).
+pub async fn fetch_recently_played(
+    client: &AuthCodePkceSpotify,
+) -> Result<Option<TrackInfo>, rspotify::ClientError> {
+    let history = client
+        .current_user_recently_played(Some(1), None)
+        .await?;
+
+    let items: Vec<PlayHistory> = history.items;
+    Ok(items.into_iter().next().and_then(|item| {
+        let t = item.track;
+        let id = t.id.as_ref().map(|id| id.to_string()).unwrap_or_default();
+        let uri = t.id.as_ref().map(|id| id.uri()).unwrap_or_default();
+        if id.is_empty() {
+            None
+        } else {
+            Some(TrackInfo {
+                id,
+                uri,
+                title: t.name,
+                artist: t.artists.first().map(|a| a.name.clone()).unwrap_or_default(),
+                album: t.album.name,
+                duration_ms: t.duration.num_milliseconds() as u32,
+                image_url: t.album.images.first().map(|img| img.url.clone()),
+            })
         }
     }))
 }

@@ -160,6 +160,21 @@ void spotti_cache_info(struct SpottiCore *core);
 void spotti_clear_cache(struct SpottiCore *core);
 
 /**
+ * Fetch initial playback state on launch. Tries current_playback first,
+ * falls back to recently-played. Emits InitialStateLoaded event.
+ */
+void spotti_fetch_initial_state(struct SpottiCore *core);
+
+/**
+ * Transfer playback to this device by loading a track and optionally seeking.
+ * Used for "continue here" when resuming from initial state or external device.
+ */
+bool spotti_transfer_to_self(struct SpottiCore *core,
+                             const char *_context_uri,
+                             const char *track_uri,
+                             uint32_t position_ms);
+
+/**
  * Start background playback sync. Polls Spotify Web API every 5s.
  * Emits PlaybackSynced events. Safe to call multiple times (cancels previous task).
  */

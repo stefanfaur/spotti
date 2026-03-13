@@ -13,6 +13,7 @@ librespot-core = { git = "https://github.com/librespot-org/librespot", branch = 
 librespot-oauth = { git = "https://github.com/librespot-org/librespot", branch = "dev" }
 librespot-playback = { git = "https://github.com/librespot-org/librespot", branch = "dev", default-features = false, features = ["rodio-backend"] }
 librespot-metadata = { git = "https://github.com/librespot-org/librespot", branch = "dev" }
+librespot-connect = { git = "https://github.com/librespot-org/librespot", branch = "dev", default-features = false }
 
 # Web API
 rspotify = { version = "0.15", features = ["cli"] }

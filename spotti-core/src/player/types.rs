@@ -27,7 +27,10 @@ pub enum PlayerCommand {
     /// Gracefully stop playback and exit the run loop.
     Shutdown,
     /// Hot-swap the session on the existing player without destroying anything.
-    Reconnect(librespot_core::Session),
+    Reconnect {
+        session: librespot_core::Session,
+        credentials: librespot_core::authentication::Credentials,
+    },
 }
 
 /// Track metadata sent to the UI via events.
@@ -40,6 +43,12 @@ pub struct TrackInfo {
     pub album: String,
     pub duration_ms: u32,
     pub image_url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub enum InitialStateSource {
+    CurrentPlayback,
+    RecentlyPlayed,
 }
 
 /// Events emitted by the player engine to the UI.
@@ -81,5 +90,14 @@ pub enum PlayerEvent {
         shuffle: bool,
         repeat: RepeatMode,
         is_our_device: bool,
+    },
+    InitialStateLoaded {
+        track: Option<TrackInfo>,
+        is_playing: bool,
+        position_ms: u32,
+        device_name: Option<String>,
+        device_id: Option<String>,
+        context_uri: Option<String>,
+        source: InitialStateSource,
     },
 }

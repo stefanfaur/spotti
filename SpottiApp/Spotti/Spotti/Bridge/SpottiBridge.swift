@@ -28,10 +28,16 @@ enum SpottiPlayerEvent {
     case positionChanged(positionMs: UInt32)
 }
 
+enum ResumableSource: Equatable {
+    case paused(deviceId: String, deviceName: String, positionMs: UInt32)
+    case recentlyPlayed
+}
+
 enum PlaybackMode: Equatable {
     case idle
     case local
     case external(deviceId: String)
+    case resumable(source: ResumableSource)
 }
 
 /// Main bridge class -- singleton that owns the Rust core pointer.
@@ -65,6 +71,8 @@ class SpottiEngine: ObservableObject {
     @Published var radioTracks: [SpottiTrackInfo] = []
     @Published var currentTrackTags: [String] = []
     @Published var loadingTagRadio: String? = nil
+    @Published var initialStateSource: String? = nil
+    @Published var externalDeviceName: String? = nil
 
     private var corePtr: OpaquePointer?
     private var positionTimer: Timer?
@@ -126,8 +134,9 @@ class SpottiEngine: ObservableObject {
                         self?.ourDeviceId = String(cString: ptr)
                         spotti_free_string(ptr)
                     }
-                    // Start background sync
+                    // Start background sync and fetch initial state
                     spotti_start_playback_sync(core)
+                    self?.fetchInitialState()
                     NotificationService.shared.requestPermission()
                 }
             }
@@ -141,13 +150,24 @@ class SpottiEngine: ObservableObject {
             spotti_play(core)
         case .external:
             spotti_web_play(core)
+        case .resumable(let source):
+            guard let track = currentTrack, let uri = track.uri else {
+                spotti_play(core)
+                return
+            }
+            switch source {
+            case .paused(_, _, let posMs):
+                transferToSelf(trackUri: uri, positionMs: posMs)
+            case .recentlyPlayed:
+                transferToSelf(trackUri: uri, positionMs: 0)
+            }
         }
     }
 
     func pause() {
         guard let core = corePtr else { return }
         switch playbackMode {
-        case .local, .idle:
+        case .local, .idle, .resumable:
             spotti_pause(core)
         case .external:
             spotti_web_pause(core)
@@ -161,7 +181,7 @@ class SpottiEngine: ObservableObject {
     func next() {
         guard let core = corePtr else { return }
         switch playbackMode {
-        case .local, .idle:
+        case .local, .idle, .resumable:
             spotti_next(core)
         case .external:
             spotti_web_next(core)
@@ -171,7 +191,7 @@ class SpottiEngine: ObservableObject {
     func previous() {
         guard let core = corePtr else { return }
         switch playbackMode {
-        case .local, .idle:
+        case .local, .idle, .resumable:
             spotti_previous(core)
         case .external:
             spotti_web_previous(core)
@@ -181,7 +201,7 @@ class SpottiEngine: ObservableObject {
     func seek(to positionMs: UInt32) {
         guard let core = corePtr else { return }
         switch playbackMode {
-        case .local, .idle:
+        case .local, .idle, .resumable:
             Task { @MainActor in self.positionMs = positionMs }
             spotti_seek(core, positionMs)
         case .external:
@@ -200,6 +220,11 @@ class SpottiEngine: ObservableObject {
                 spotti_transfer_playback(core, ptr, true)
             }
             return
+        }
+
+        // Resumable mode: clear it and load locally
+        if case .resumable = playbackMode {
+            playbackMode = .idle
         }
 
         isLoading = true
@@ -225,11 +250,34 @@ class SpottiEngine: ObservableObject {
                 return
             }
 
+            // Resumable mode: clear it and load locally
+            if case .resumable = playbackMode {
+                playbackMode = .idle
+            }
+
             isLoading = true
             lastLoadedContext = PendingContext(uris: uris, index: index)
             lastLoadedUri = nil
             jsonString.withCString { ptr in
                 spotti_load_context(core, ptr, index)
+            }
+        }
+    }
+
+    // MARK: - Initial State & Transfer
+
+    func fetchInitialState() {
+        guard let core = corePtr else { return }
+        spotti_fetch_initial_state(core)
+    }
+
+    func transferToSelf(trackUri: String, positionMs: UInt32 = 0) {
+        guard let core = corePtr else { return }
+        isLoading = true
+        trackUri.withCString { trackPtr in
+            // context_uri not used yet, pass empty string
+            "".withCString { ctxPtr in
+                _ = spotti_transfer_to_self(core, ctxPtr, trackPtr, positionMs)
             }
         }
     }
@@ -680,29 +728,63 @@ class SpottiEngine: ObservableObject {
                 }
             }
 
+        case "InitialStateLoaded":
+            let sourceStr = dict["source"] as? String ?? "RecentlyPlayed"
+            initialStateSource = sourceStr
+            let isPlayingRemote = dict["is_playing"] as? Bool ?? false
+            let posMs = UInt32(dict["position_ms"] as? Int ?? 0)
+            let deviceName = dict["device_name"] as? String
+            let deviceId = dict["device_id"] as? String
+
+            decodeTrack(from: dict["track"])
+            if let pos = dict["position_ms"] as? Int {
+                positionMs = UInt32(pos)
+            }
+
+            if isPlayingRemote {
+                // Currently playing on another device
+                let devId = deviceId ?? ""
+                playbackMode = .external(deviceId: devId)
+                self.isPlaying = true
+                activeDeviceName = deviceName
+                externalDeviceName = deviceName
+                startPositionTimer()
+            } else if sourceStr == "CurrentPlayback", let devId = deviceId {
+                // Paused on a known device — resumable
+                playbackMode = .resumable(source: .paused(
+                    deviceId: devId,
+                    deviceName: deviceName ?? "Unknown",
+                    positionMs: posMs
+                ))
+                self.isPlaying = false
+                activeDeviceName = deviceName
+                externalDeviceName = deviceName
+            } else {
+                // Recently played — resumable from start
+                playbackMode = .resumable(source: .recentlyPlayed)
+                self.isPlaying = false
+            }
+
+            if let track = currentTrack {
+                ThemeEngine.shared.updateColors(for: track)
+            }
+
         case "PlaybackSynced":
             let isOurDevice = dict["is_our_device"] as? Bool ?? false
             let isPlaying = dict["is_playing"] as? Bool ?? false
 
+            // Spirc is authoritative when we're the active device — ignore sync entirely
             if isOurDevice {
-                // librespot is authoritative for track/position; only sync shuffle/repeat
-                if let shuffleVal = dict["shuffle"] as? Bool {
-                    shuffleEnabled = shuffleVal
-                }
-                if let modeStr = dict["repeat"] as? String {
-                    switch modeStr {
-                    case "Context": repeatMode = 1
-                    case "Track":   repeatMode = 2
-                    default:        repeatMode = 0
-                    }
-                }
-                playbackMode = .local
                 return
             }
 
             // If we're already playing locally, don't let a stale sync override us.
-            // The local Playing/Paused events are authoritative for local playback.
             if case .local = playbackMode {
+                return
+            }
+
+            // Don't override initial state with sync data
+            if case .resumable = playbackMode {
                 return
             }
 

@@ -147,6 +147,14 @@ pub extern "C" fn spotti_player_init(core: *mut SpottiCore) -> i32 {
         }
     };
 
+    let credentials = match core.auth.as_ref().and_then(|a| a.credentials()) {
+        Some(c) => c,
+        None => {
+            log::error!("Cannot init player: no credentials available");
+            return -1;
+        }
+    };
+
     let (cmd_tx, cmd_rx) = mpsc::channel::<PlayerCommand>(64);
     let (event_tx, event_rx) = bounded::<PlayerEvent>(64);
 
@@ -175,8 +183,8 @@ pub extern "C" fn spotti_player_init(core: *mut SpottiCore) -> i32 {
 
     // Spawn the player engine on the tokio runtime
     get_runtime().spawn(async move {
-        match PlayerEngine::new(session, cmd_rx, event_tx, now_playing_tx) {
-            Ok(engine) => engine.run().await,
+        match PlayerEngine::new(session, credentials, cmd_rx, event_tx, now_playing_tx).await {
+            Ok((engine, spirc_task)) => engine.run(spirc_task).await,
             Err(e) => log::error!("PlayerEngine failed to start: {}", e),
         }
     });
@@ -633,6 +641,106 @@ pub extern "C" fn spotti_clear_cache(core: *mut SpottiCore) {
     }
 }
 
+// ── Initial State ──
+
+/// Fetch initial playback state on launch. Tries current_playback first,
+/// falls back to recently-played. Emits InitialStateLoaded event.
+#[no_mangle]
+pub extern "C" fn spotti_fetch_initial_state(core: *mut SpottiCore) {
+    let core = unsafe { &*core };
+    let client = match core.auth.as_ref().and_then(|a| a.rspotify()).cloned() {
+        Some(c) => c,
+        None => return,
+    };
+    let event_cb = core.event_callback;
+
+    get_runtime().spawn(async move {
+        use crate::player::types::InitialStateSource;
+        use crate::spotify::playback_sync::{fetch_current_playback, fetch_recently_played};
+
+        // Try current_playback first
+        match fetch_current_playback(&client).await {
+            Ok(Some(state)) => {
+                unsafe {
+                    emit_event(event_cb, &PlayerEvent::InitialStateLoaded {
+                        track: state.track,
+                        is_playing: state.is_playing,
+                        position_ms: state.position_ms,
+                        device_name: state.device_name,
+                        device_id: state.device_id,
+                        context_uri: None,
+                        source: InitialStateSource::CurrentPlayback,
+                    });
+                }
+                return;
+            }
+            Ok(None) => { /* fall through */ }
+            Err(e) => { log::warn!("current_playback failed: {}", e); }
+        }
+
+        // Fall back to recently-played
+        match fetch_recently_played(&client).await {
+            Ok(Some(track)) => {
+                unsafe {
+                    emit_event(event_cb, &PlayerEvent::InitialStateLoaded {
+                        track: Some(track),
+                        is_playing: false,
+                        position_ms: 0,
+                        device_name: None,
+                        device_id: None,
+                        context_uri: None,
+                        source: InitialStateSource::RecentlyPlayed,
+                    });
+                }
+            }
+            _ => {
+                unsafe {
+                    emit_event(event_cb, &PlayerEvent::InitialStateLoaded {
+                        track: None,
+                        is_playing: false,
+                        position_ms: 0,
+                        device_name: None,
+                        device_id: None,
+                        context_uri: None,
+                        source: InitialStateSource::RecentlyPlayed,
+                    });
+                }
+            }
+        }
+    });
+}
+
+// ── Transfer to Self ──
+
+/// Transfer playback to this device by loading a track and optionally seeking.
+/// Used for "continue here" when resuming from initial state or external device.
+#[no_mangle]
+pub extern "C" fn spotti_transfer_to_self(
+    core: *mut SpottiCore,
+    _context_uri: *const c_char,
+    track_uri: *const c_char,
+    position_ms: u32,
+) -> bool {
+    let core = unsafe { &*core };
+    let track_uri_str = unsafe { CStr::from_ptr(track_uri).to_string_lossy().to_string() };
+
+    if let Some(ref tx) = core.cmd_tx {
+        let cmd = PlayerCommand::LoadTrack {
+            uri: track_uri_str,
+            start_playing: true,
+        };
+        if tx.blocking_send(cmd).is_err() {
+            return false;
+        }
+        if position_ms > 0 {
+            let _ = tx.blocking_send(PlayerCommand::Seek(position_ms));
+        }
+        true
+    } else {
+        false
+    }
+}
+
 // ── Playback Sync ──
 
 /// Start background playback sync. Polls Spotify Web API every 5s.
@@ -705,7 +813,7 @@ pub extern "C" fn spotti_start_playback_sync(core: *mut SpottiCore) {
                     log::warn!("Playback sync error: {e}");
                 }
             }
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
         }
     });
 
@@ -760,8 +868,12 @@ pub extern "C" fn spotti_reconnect(core: *mut SpottiCore) -> i32 {
 
     // Try lightweight reconnect: send new session to existing engine
     let mut needs_full_reinit = true;
-    if let Some(ref tx) = core.cmd_tx {
-        if tx.blocking_send(PlayerCommand::Reconnect(new_session)).is_ok() {
+    let creds = auth.credentials();
+    if let (Some(ref tx), Some(creds)) = (&core.cmd_tx, creds) {
+        if tx.blocking_send(PlayerCommand::Reconnect {
+            session: new_session,
+            credentials: creds,
+        }).is_ok() {
             log::info!("Sent Reconnect to existing engine (lightweight path)");
             needs_full_reinit = false;
         } else {
