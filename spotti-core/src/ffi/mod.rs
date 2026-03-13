@@ -27,6 +27,7 @@ pub struct SpottiCore {
     art_cache: Option<ArtCache>,
     sync_task: Option<tokio::task::JoinHandle<()>>,
     sync_running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    playback_device_id: Option<String>,
 }
 
 /// Helper to emit an event directly via FFI callback (outside the crossbeam channel path).
@@ -64,6 +65,7 @@ pub extern "C" fn spotti_core_create(client_id: *const c_char) -> *mut SpottiCor
         art_cache: None,
         sync_task: None,
         sync_running: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        playback_device_id: None,
     };
     Box::into_raw(Box::new(core))
 }
@@ -181,9 +183,20 @@ pub extern "C" fn spotti_player_init(core: *mut SpottiCore) -> i32 {
         }
     };
 
+    // Create the playback session inside the runtime context (Session::new needs a Tokio reactor).
+    // Store the device ID so spotti_get_device_id() returns the Spirc device ID.
+    let session_cache = session.cache().map(|c| c.as_ref().clone());
+    let playback_session = get_runtime().block_on(async {
+        librespot_core::Session::new(
+            librespot_core::config::SessionConfig::default(),
+            session_cache,
+        )
+    });
+    core.playback_device_id = Some(playback_session.device_id().to_string());
+
     // Spawn the player engine on the tokio runtime
     get_runtime().spawn(async move {
-        match PlayerEngine::new(session, credentials, cmd_rx, event_tx, now_playing_tx).await {
+        match PlayerEngine::new(playback_session, credentials, cmd_rx, event_tx, now_playing_tx).await {
             Ok((engine, spirc_task)) => engine.run(spirc_task).await,
             Err(e) => log::error!("PlayerEngine failed to start: {}", e),
         }
@@ -592,8 +605,8 @@ pub extern "C" fn spotti_get_username(core: *mut SpottiCore) -> *mut c_char {
 #[no_mangle]
 pub extern "C" fn spotti_get_device_id(core: *mut SpottiCore) -> *mut c_char {
     let core = unsafe { &*core };
-    match core.auth.as_ref().and_then(|a| a.session()).map(|s| s.device_id().to_string()) {
-        Some(id) => match CString::new(id) {
+    match core.playback_device_id.as_ref() {
+        Some(id) => match CString::new(id.clone()) {
             Ok(c_str) => c_str.into_raw(),
             Err(_) => std::ptr::null_mut(),
         },
@@ -717,22 +730,37 @@ pub extern "C" fn spotti_fetch_initial_state(core: *mut SpottiCore) {
 #[no_mangle]
 pub extern "C" fn spotti_transfer_to_self(
     core: *mut SpottiCore,
-    _context_uri: *const c_char,
+    context_uri: *const c_char,
     track_uri: *const c_char,
     position_ms: u32,
 ) -> bool {
     let core = unsafe { &*core };
     let track_uri_str = unsafe { CStr::from_ptr(track_uri).to_string_lossy().to_string() };
+    let context_uri_str = if context_uri.is_null() {
+        None
+    } else {
+        let s = unsafe { CStr::from_ptr(context_uri).to_string_lossy().to_string() };
+        if s.is_empty() { None } else { Some(s) }
+    };
 
     if let Some(ref tx) = core.cmd_tx {
-        let cmd = PlayerCommand::LoadTrack {
-            uri: track_uri_str,
-            start_playing: true,
+        let cmd = if let Some(ctx_uri) = context_uri_str {
+            PlayerCommand::LoadContextUri {
+                context_uri: ctx_uri,
+                track_uri: Some(track_uri_str),
+                position_ms,
+            }
+        } else {
+            PlayerCommand::LoadTrack {
+                uri: track_uri_str,
+                start_playing: true,
+            }
         };
         if tx.blocking_send(cmd).is_err() {
             return false;
         }
-        if position_ms > 0 {
+        // For LoadTrack fallback, seek separately if needed
+        if position_ms > 0 && context_uri.is_null() {
             let _ = tx.blocking_send(PlayerCommand::Seek(position_ms));
         }
         true
@@ -766,9 +794,7 @@ pub extern "C" fn spotti_start_playback_sync(core: *mut SpottiCore) {
         }
     };
 
-    let our_device_id: Option<String> = core.auth.as_ref()
-        .and_then(|a| a.session())
-        .map(|s| s.device_id().to_string());
+    let our_device_id: Option<String> = core.playback_device_id.clone();
 
     let event_cb = core.event_callback;
 
@@ -832,66 +858,43 @@ pub extern "C" fn spotti_stop_playback_sync(core: *mut SpottiCore) {
 
 // ── Session Reconnection ──
 
-/// Reconnect after session loss. Uses lightweight `player.set_session()` to
-/// hot-swap the session on the existing player — no teardown/rebuild needed.
-/// Falls back to full reinit if the engine command channel is dead.
-/// Returns 0 on success, -1 on failure.
+/// Reconnect after session loss. Does full engine teardown + rebuild
+/// (new session, new player, new Spirc). Returns 0 on success, -1 on failure.
 #[no_mangle]
 pub extern "C" fn spotti_reconnect(core: *mut SpottiCore) -> i32 {
     let core = unsafe { &mut *core };
 
-    // Stop playback sync (needs restarting with new rspotify client)
+    // Stop playback sync
     core.sync_running.store(false, std::sync::atomic::Ordering::SeqCst);
     if let Some(handle) = core.sync_task.take() {
         handle.abort();
     }
 
-    // Re-authenticate with cached credentials (creates a new Session)
+    // Shutdown existing engine
+    if let Some(old_tx) = core.cmd_tx.take() {
+        let _ = old_tx.blocking_send(PlayerCommand::Shutdown);
+        drop(old_tx);
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+
+    // Re-authenticate
     let mut auth = AuthManager::new(core.client_id.clone());
     match get_runtime().block_on(auth.authenticate()) {
-        Ok(()) => {
-            log::info!("Re-authenticated successfully");
-        }
+        Ok(()) => log::info!("Re-authenticated successfully"),
         Err(e) => {
             log::error!("Reconnection failed: {}", e);
             return -1;
         }
     }
-
-    let new_session = match auth.session() {
-        Some(s) => s.clone(),
-        None => {
-            log::error!("Auth succeeded but no session available");
-            return -1;
-        }
-    };
-
-    // Try lightweight reconnect: send new session to existing engine
-    let mut needs_full_reinit = true;
-    let creds = auth.credentials();
-    if let (Some(ref tx), Some(creds)) = (&core.cmd_tx, creds) {
-        if tx.blocking_send(PlayerCommand::Reconnect {
-            session: new_session,
-            credentials: creds,
-        }).is_ok() {
-            log::info!("Sent Reconnect to existing engine (lightweight path)");
-            needs_full_reinit = false;
-        } else {
-            log::warn!("Engine command channel dead — falling back to full reinit");
-            core.cmd_tx = None;
-        }
-    }
-
     core.auth = Some(auth);
 
-    if needs_full_reinit {
-        let result = spotti_player_init(core);
-        if result != 0 {
-            return result;
-        }
+    // Full engine reinit (creates new session, player, spirc)
+    let result = spotti_player_init(core);
+    if result != 0 {
+        return result;
     }
 
-    // Restart playback sync with the new rspotify client
+    // Restart playback sync
     spotti_start_playback_sync(core);
     0
 }

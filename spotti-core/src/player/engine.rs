@@ -7,10 +7,9 @@ use std::sync::mpsc as std_mpsc;
 
 use crossbeam_channel::Sender;
 use librespot_core::Session;
-use librespot_core::SpotifyUri;
 use librespot_core::authentication::Credentials;
 use librespot_core::config::DeviceType;
-use librespot_connect::{Spirc, ConnectConfig};
+use librespot_connect::{Spirc, ConnectConfig, LoadRequest, LoadRequestOptions, PlayingTrack};
 use librespot_metadata::audio::AudioItem;
 use librespot_playback::audio_backend;
 use librespot_playback::config::{AudioFormat, Bitrate, PlayerConfig};
@@ -30,22 +29,17 @@ pub struct PlayerEngine {
     mixer: Arc<SoftMixer>,
     cmd_rx: mpsc::Receiver<PlayerCommand>,
     event_tx: Sender<PlayerEvent>,
-    queue: Vec<String>,
-    queue_index: usize,
     current_track: Option<TrackInfo>,
     is_playing: bool,
-    shuffle: bool,
-    repeat: RepeatMode,
-    original_queue: Vec<String>,
     now_playing_tx: Option<std_mpsc::Sender<NowPlayingCommand>>,
     bitrate: Bitrate,
-    consecutive_load_failures: u32,
     session_lost_emitted: bool,
+    activated: bool,
 }
 
 impl PlayerEngine {
     pub async fn new(
-        session: Session,
+        playback_session: Session,
         credentials: Credentials,
         cmd_rx: mpsc::Receiver<PlayerCommand>,
         event_tx: Sender<PlayerEvent>,
@@ -69,7 +63,7 @@ impl PlayerEngine {
 
         let player = Player::new(
             player_config,
-            session.clone(),
+            playback_session.clone(),
             volume_getter,
             move || backend(None, audio_format),
         );
@@ -84,60 +78,30 @@ impl PlayerEngine {
             emit_set_queue_events: false,
         };
 
-        // Spirc needs the Dealer WebSocket to be ready. The session may have
-        // just connected to the AP, so retry a few times with a short delay.
-        let mut spirc_result = None;
-        for attempt in 0..3 {
-            match Spirc::new(
-                connect_config.clone(),
-                session.clone(),
-                credentials.clone(),
-                player.clone(),
-                mixer.clone(),
-            )
-            .await
-            {
-                Ok(result) => {
-                    spirc_result = Some(result);
-                    break;
-                }
-                Err(e) if attempt < 2 => {
-                    log::warn!(
-                        "Spirc creation attempt {} failed: {}, retrying...",
-                        attempt + 1,
-                        e
-                    );
-                    tokio::time::sleep(Duration::from_millis(500)).await;
-                }
-                Err(e) => {
-                    return Err(format!(
-                        "Failed to create Spirc after 3 attempts: {}",
-                        e
-                    ));
-                }
-            }
-        }
-        let (spirc, spirc_task) = spirc_result.unwrap();
+        let (spirc, spirc_task) = Spirc::new(
+            connect_config,
+            playback_session.clone(),
+            credentials.clone(),
+            player.clone(),
+            mixer.clone(),
+        )
+        .await
+        .map_err(|e| format!("Failed to create Spirc: {}", e))?;
 
         let engine = Self {
             player,
             spirc: Some(spirc),
-            session,
+            session: playback_session,
             credentials,
             mixer,
             cmd_rx,
             event_tx,
-            queue: Vec::new(),
-            queue_index: 0,
             current_track: None,
             is_playing: false,
-            shuffle: false,
-            repeat: RepeatMode::Off,
-            original_queue: Vec::new(),
             now_playing_tx,
             bitrate: Bitrate::Bitrate320,
-            consecutive_load_failures: 0,
             session_lost_emitted: false,
+            activated: false,
         };
 
         let spirc_future: Pin<Box<dyn Future<Output = ()> + Send>> = Box::pin(spirc_task);
@@ -207,129 +171,105 @@ impl PlayerEngine {
         }
     }
 
+    fn ensure_active(&mut self) {
+        if !self.activated {
+            if let Some(ref spirc) = self.spirc {
+                let _ = spirc.activate();
+                self.activated = true;
+            }
+        }
+    }
+
     /// Returns true if the run loop should exit.
     fn handle_command(&mut self, cmd: PlayerCommand) -> bool {
         match cmd {
             PlayerCommand::Play => {
-                self.is_playing = true;
                 if let Some(ref spirc) = self.spirc {
                     let _ = spirc.play();
-                } else {
-                    self.player.play();
                 }
             }
             PlayerCommand::Pause => {
-                self.is_playing = false;
                 if let Some(ref spirc) = self.spirc {
                     let _ = spirc.pause();
-                } else {
-                    self.player.pause();
                 }
             }
             PlayerCommand::Toggle => {
-                log::info!("Toggle: is_playing={}", self.is_playing);
-                if self.is_playing {
-                    self.is_playing = false;
-                    if let Some(ref spirc) = self.spirc {
-                        let _ = spirc.pause();
-                    } else {
-                        self.player.pause();
-                    }
-                } else {
-                    self.is_playing = true;
-                    if let Some(ref spirc) = self.spirc {
-                        let _ = spirc.play();
-                    } else {
-                        self.player.play();
-                    }
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.play_pause();
                 }
             }
             PlayerCommand::Stop => {
-                self.is_playing = false;
                 if let Some(ref spirc) = self.spirc {
                     let _ = spirc.pause();
                 }
-                self.player.stop();
             }
             PlayerCommand::Seek(pos_ms) => {
                 if let Some(ref spirc) = self.spirc {
                     let _ = spirc.set_position_ms(pos_ms);
-                } else {
-                    self.player.seek(pos_ms);
                 }
             }
             PlayerCommand::Next => {
-                self.consecutive_load_failures = 0;
-                if self.queue_index + 1 < self.queue.len() {
-                    self.queue_index += 1;
-                    self.load_current_track(true);
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.next();
                 }
             }
             PlayerCommand::Previous => {
-                self.consecutive_load_failures = 0;
-                if self.queue_index > 0 {
-                    self.queue_index -= 1;
-                    self.load_current_track(true);
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.prev();
                 }
             }
             PlayerCommand::LoadTrack { uri, start_playing } => {
-                self.consecutive_load_failures = 0;
-                self.queue = vec![uri];
-                self.queue_index = 0;
-                self.load_current_track(start_playing);
+                self.ensure_active();
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.load(LoadRequest::from_tracks(
+                        vec![uri],
+                        LoadRequestOptions {
+                            start_playing,
+                            ..Default::default()
+                        },
+                    ));
+                }
             }
             PlayerCommand::LoadContext { uris, index } => {
-                self.consecutive_load_failures = 0;
-                self.queue = uris;
-                self.queue_index = index;
-                self.load_current_track(true);
+                self.ensure_active();
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.load(LoadRequest::from_tracks(
+                        uris,
+                        LoadRequestOptions {
+                            start_playing: true,
+                            playing_track: Some(PlayingTrack::Index(index as u32)),
+                            ..Default::default()
+                        },
+                    ));
+                }
+            }
+            PlayerCommand::LoadContextUri { context_uri, track_uri, position_ms } => {
+                self.ensure_active();
+                if let Some(ref spirc) = self.spirc {
+                    let _ = spirc.load(LoadRequest::from_context_uri(
+                        context_uri,
+                        LoadRequestOptions {
+                            start_playing: true,
+                            seek_to: position_ms,
+                            playing_track: track_uri.map(PlayingTrack::Uri),
+                            ..Default::default()
+                        },
+                    ));
+                }
             }
             PlayerCommand::SetVolume(volume) => {
                 if let Some(ref spirc) = self.spirc {
                     let _ = spirc.set_volume(volume);
-                } else {
-                    self.mixer.set_volume(volume);
                 }
                 let _ = self.event_tx.send(PlayerEvent::VolumeChanged { volume });
             }
             PlayerCommand::SetShuffle(enabled) => {
-                self.shuffle = enabled;
-                if enabled {
-                    self.original_queue = self.queue.clone();
-                    let current_uri = self.queue.get(self.queue_index).cloned();
-                    let mut rest: Vec<String> = self
-                        .queue
-                        .iter()
-                        .enumerate()
-                        .filter(|(i, _)| *i != self.queue_index)
-                        .map(|(_, uri)| uri.clone())
-                        .collect();
-                    use rand::seq::SliceRandom;
-                    rest.shuffle(&mut rand::rng());
-                    self.queue = Vec::with_capacity(rest.len() + 1);
-                    if let Some(current) = current_uri {
-                        self.queue.push(current);
-                    }
-                    self.queue.extend(rest);
-                    self.queue_index = 0;
-                } else if !self.original_queue.is_empty() {
-                    let current_uri = self.queue.first().cloned();
-                    self.queue = self.original_queue.clone();
-                    if let Some(ref uri) = current_uri {
-                        self.queue_index = self
-                            .original_queue
-                            .iter()
-                            .position(|u| u == uri)
-                            .unwrap_or(0);
-                    }
-                }
                 if let Some(ref spirc) = self.spirc {
                     let _ = spirc.shuffle(enabled);
                 }
                 let _ = self.event_tx.send(PlayerEvent::ShuffleChanged { enabled });
             }
             PlayerCommand::SetRepeat(mode) => {
-                self.repeat = mode;
                 if let Some(ref spirc) = self.spirc {
                     match mode {
                         RepeatMode::Off => {
@@ -364,112 +304,14 @@ impl PlayerEngine {
                 self.is_playing = false;
                 return true;
             }
-            PlayerCommand::Reconnect { session: new_session, credentials: new_credentials } => {
-                log::info!("Hot-swapping session on existing player (is_playing={})", self.is_playing);
-                self.session = new_session.clone();
-                self.credentials = new_credentials;
-                self.player.set_session(new_session);
-                self.consecutive_load_failures = 0;
-                self.session_lost_emitted = false;
-                // Re-apply pause state: librespot's internal state machine may
-                // transition to Playing after a session swap.
-                if !self.is_playing {
-                    self.player.pause();
-                }
-            }
         }
         false
-    }
-
-    fn load_current_track(&mut self, start_playing: bool) {
-        let Some(uri_str) = self.queue.get(self.queue_index) else {
-            return;
-        };
-
-        // Fail fast if session is already dead — don't waste time on doomed loads.
-        if self.session.is_invalid() {
-            if !self.session_lost_emitted {
-                log::warn!("Session invalid at load time — emitting SessionLost");
-                self.session_lost_emitted = true;
-                self.is_playing = false;
-                let _ = self.event_tx.send(PlayerEvent::SessionLost {
-                    message: "Session connection lost".to_string(),
-                });
-            }
-            return;
-        }
-
-        // Every load attempt increments the failure counter.
-        // It is reset to 0 on successful Playing/TrackChanged events.
-        self.consecutive_load_failures += 1;
-        if self.consecutive_load_failures > 3 {
-            log::error!(
-                "Session lost: {} consecutive load attempts without success",
-                self.consecutive_load_failures
-            );
-            let _ = self.event_tx.send(PlayerEvent::SessionLost {
-                message: "Multiple consecutive track load failures — session may have expired".to_string(),
-            });
-            self.is_playing = false;
-            return;
-        }
-
-        let _ = self.event_tx.send(PlayerEvent::Loading {
-            uri: uri_str.clone(),
-        });
-
-        match SpotifyUri::from_uri(uri_str) {
-            Ok(spotify_uri) => {
-                self.player.load(spotify_uri, start_playing, 0);
-            }
-            Err(e) => {
-                let _ = self.event_tx.send(PlayerEvent::Error {
-                    message: format!("Invalid URI {}: {}", uri_str, e),
-                });
-            }
-        }
-    }
-
-    /// Advance the queue after a track fails to load, matching librespot's auto-skip behavior.
-    fn advance_after_error(&mut self) {
-        // Don't cascade: if we're already hitting consecutive failures, stop trying.
-        if self.consecutive_load_failures > 2 {
-            log::warn!("Stopping auto-advance: {} consecutive failures", self.consecutive_load_failures);
-            return;
-        }
-        match self.repeat {
-            RepeatMode::Track => {
-                // Don't retry the same broken track in a loop
-                if self.queue_index + 1 < self.queue.len() {
-                    self.queue_index += 1;
-                    self.load_current_track(true);
-                } else {
-                    let _ = self.event_tx.send(PlayerEvent::Stopped);
-                }
-            }
-            RepeatMode::Context => {
-                self.queue_index += 1;
-                if self.queue_index >= self.queue.len() {
-                    self.queue_index = 0;
-                }
-                self.load_current_track(true);
-            }
-            RepeatMode::Off => {
-                if self.queue_index + 1 < self.queue.len() {
-                    self.queue_index += 1;
-                    self.load_current_track(true);
-                } else {
-                    let _ = self.event_tx.send(PlayerEvent::Stopped);
-                }
-            }
-        }
     }
 
     fn handle_librespot_event(&mut self, event: LibrespotEvent) {
         match event {
             LibrespotEvent::Playing { position_ms, .. } => {
                 self.is_playing = true;
-                self.consecutive_load_failures = 0;
                 if let Some(ref track) = self.current_track {
                     let _ = self.event_tx.send(PlayerEvent::Playing {
                         track: track.clone(),
@@ -498,7 +340,6 @@ impl PlayerEngine {
                 self.update_now_playing(NowPlayingCommand::SetStopped);
             }
             LibrespotEvent::TrackChanged { audio_item } => {
-                self.consecutive_load_failures = 0;
                 let track_info = track_info_from_audio_item(&audio_item);
                 self.current_track = Some(track_info.clone());
                 let _ = self.event_tx.send(PlayerEvent::TrackChanged { track: track_info.clone() });
@@ -506,55 +347,22 @@ impl PlayerEngine {
                     title: track_info.title,
                     artist: track_info.artist,
                     album: track_info.album,
-                    cover_url: None, // souvlaki macOS needs file:// URLs; art cache integration later
+                    cover_url: None,
                     duration_ms: track_info.duration_ms,
                 });
             }
             LibrespotEvent::EndOfTrack { .. } => {
-                match self.repeat {
-                    RepeatMode::Track => {
-                        self.load_current_track(true);
-                    }
-                    RepeatMode::Context => {
-                        self.queue_index += 1;
-                        if self.queue_index >= self.queue.len() {
-                            self.queue_index = 0;
-                        }
-                        self.load_current_track(true);
-                    }
-                    RepeatMode::Off => {
-                        if self.queue_index + 1 < self.queue.len() {
-                            self.queue_index += 1;
-                            self.load_current_track(true);
-                        } else {
-                            let _ = self.event_tx.send(PlayerEvent::EndOfTrack);
-                        }
-                    }
-                }
+                // Spirc handles queue advancement internally.
+                // We'll get TrackChanged + Playing events for the next track.
             }
             LibrespotEvent::TimeToPreloadNextTrack { .. } => {
-                if let Some(next_uri) = self.queue.get(self.queue_index + 1) {
-                    if let Ok(uri) = SpotifyUri::from_uri(next_uri) {
-                        self.player.preload(uri);
-                    }
-                }
+                // Spirc handles preloading internally.
             }
             LibrespotEvent::Unavailable { track_id, .. } => {
-                let failed_id = track_id.to_string();
-                let current_uri = self.queue.get(self.queue_index).cloned().unwrap_or_default();
-                log::warn!("Track unavailable: {}", failed_id);
-
-                // Only advance if the unavailable track is the one we're trying to play,
-                // not a preloaded track that failed in the background.
-                let is_current = current_uri.ends_with(&failed_id);
-                if is_current {
-                    let _ = self.event_tx.send(PlayerEvent::Error {
-                        message: format!("Track unavailable: {}", current_uri),
-                    });
-                    self.advance_after_error();
-                } else {
-                    log::info!("Ignoring unavailable preload for {}, current is {}", failed_id, current_uri);
-                }
+                log::warn!("Track unavailable: {}", track_id);
+                let _ = self.event_tx.send(PlayerEvent::Error {
+                    message: format!("Track unavailable: {}", track_id),
+                });
             }
             LibrespotEvent::Seeked { position_ms, .. } => {
                 let _ = self.event_tx.send(PlayerEvent::PositionChanged { position_ms });
@@ -570,9 +378,10 @@ impl PlayerEngine {
                     is_playing: self.is_playing,
                 });
             }
-            LibrespotEvent::Loading { .. } => {
-                // Librespot is loading a track. We already emit our own Loading event
-                // from load_current_track, so we don't duplicate it here.
+            LibrespotEvent::Loading { track_id, .. } => {
+                let _ = self.event_tx.send(PlayerEvent::Loading {
+                    uri: track_id.to_string(),
+                });
             }
             other => {
                 log::debug!("Unhandled librespot event: {:?}", other);

@@ -170,7 +170,7 @@ void spotti_fetch_initial_state(struct SpottiCore *core);
  * Used for "continue here" when resuming from initial state or external device.
  */
 bool spotti_transfer_to_self(struct SpottiCore *core,
-                             const char *_context_uri,
+                             const char *context_uri,
                              const char *track_uri,
                              uint32_t position_ms);
 
@@ -186,10 +186,8 @@ void spotti_start_playback_sync(struct SpottiCore *core);
 void spotti_stop_playback_sync(struct SpottiCore *core);
 
 /**
- * Reconnect after session loss. Uses lightweight `player.set_session()` to
- * hot-swap the session on the existing player — no teardown/rebuild needed.
- * Falls back to full reinit if the engine command channel is dead.
- * Returns 0 on success, -1 on failure.
+ * Reconnect after session loss. Does full engine teardown + rebuild
+ * (new session, new player, new Spirc). Returns 0 on success, -1 on failure.
  */
 int32_t spotti_reconnect(struct SpottiCore *core);
 

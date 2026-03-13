@@ -24,13 +24,14 @@ pub enum PlayerCommand {
     /// Change audio bitrate: 0 = 96kbps, 1 = 160kbps, 2 = 320kbps.
     /// Takes effect on next track load.
     SetBitrate(u32),
+    /// Load a Spotify context URI (playlist, album, etc.) via Spirc.
+    LoadContextUri {
+        context_uri: String,
+        track_uri: Option<String>,
+        position_ms: u32,
+    },
     /// Gracefully stop playback and exit the run loop.
     Shutdown,
-    /// Hot-swap the session on the existing player without destroying anything.
-    Reconnect {
-        session: librespot_core::Session,
-        credentials: librespot_core::authentication::Credentials,
-    },
 }
 
 /// Track metadata sent to the UI via events.

@@ -35,9 +35,6 @@ dirs = "6"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 urlencoding = "2"
 
-# Shuffle
-rand = "0.9"
-
 # System media controls (Now Playing / media keys)
 souvlaki = "0.8"
 
