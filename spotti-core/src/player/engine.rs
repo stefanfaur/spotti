@@ -84,15 +84,40 @@ impl PlayerEngine {
             emit_set_queue_events: false,
         };
 
-        let (spirc, spirc_task) = Spirc::new(
-            connect_config,
-            session.clone(),
-            credentials.clone(),
-            player.clone(),
-            mixer.clone(),
-        )
-        .await
-        .map_err(|e| format!("Failed to create Spirc: {}", e))?;
+        // Spirc needs the Dealer WebSocket to be ready. The session may have
+        // just connected to the AP, so retry a few times with a short delay.
+        let mut spirc_result = None;
+        for attempt in 0..3 {
+            match Spirc::new(
+                connect_config.clone(),
+                session.clone(),
+                credentials.clone(),
+                player.clone(),
+                mixer.clone(),
+            )
+            .await
+            {
+                Ok(result) => {
+                    spirc_result = Some(result);
+                    break;
+                }
+                Err(e) if attempt < 2 => {
+                    log::warn!(
+                        "Spirc creation attempt {} failed: {}, retrying...",
+                        attempt + 1,
+                        e
+                    );
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+                Err(e) => {
+                    return Err(format!(
+                        "Failed to create Spirc after 3 attempts: {}",
+                        e
+                    ));
+                }
+            }
+        }
+        let (spirc, spirc_task) = spirc_result.unwrap();
 
         let engine = Self {
             player,
