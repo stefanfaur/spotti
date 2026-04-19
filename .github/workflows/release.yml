@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-and-release:
-    runs-on: macos-15  # Apple Silicon runner with latest Xcode
+    runs-on: macos-26  # Apple Silicon runner with Xcode 26 (matches MACOSX_DEPLOYMENT_TARGET 26.x)
     permissions:
       contents: write
 
