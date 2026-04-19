@@ -24,3 +24,7 @@ build/
 # Skills/agents cache
 .agents/
 skills-lock.json
+
+# Claude tooling and notes (local only)
+.claude/
+thoughts/
