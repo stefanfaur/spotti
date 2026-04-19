@@ -139,6 +139,31 @@ else
     step "Skipping code signing (--skip-sign)"
 fi
 
+# --- Step 4b: Notarize and staple .app ---------------------------------------
+if [ -n "$NOTARIZE_PROFILE" ] && [ "$SKIP_SIGN" = false ] && [ "$SKIP_NOTARIZE" = false ]; then
+    step "Notarizing app bundle"
+    APP_ZIP="$BUILD_DIR/$APP_NAME.zip"
+    rm -f "$APP_ZIP"
+    ditto -c -k --keepParent "$APP_PATH" "$APP_ZIP"
+
+    SUBMIT_APP_OUTPUT=$(xcrun notarytool submit "$APP_ZIP" \
+        --keychain-profile "$NOTARIZE_PROFILE" \
+        --wait 2>&1)
+    echo "$SUBMIT_APP_OUTPUT"
+    rm -f "$APP_ZIP"
+
+    if echo "$SUBMIT_APP_OUTPUT" | grep -q "status: Accepted"; then
+        step "Stapling notarization ticket to app"
+        xcrun stapler staple "$APP_PATH"
+        info "App stapled"
+    else
+        APP_SUBMISSION_ID=$(echo "$SUBMIT_APP_OUTPUT" | grep "id:" | head -1 | awk '{print $NF}')
+        fail "App notarization failed. Check logs: xcrun notarytool log $APP_SUBMISSION_ID --keychain-profile $NOTARIZE_PROFILE"
+    fi
+else
+    step "Skipping app notarization"
+fi
+
 # --- Step 5: Create DMG -----------------------------------------------------
 step "Creating DMG"
 

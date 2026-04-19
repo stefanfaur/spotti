@@ -33,10 +33,52 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
+      - name: Configure signing credentials
+        id: configure-signing-credentials
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
+          APPLE_SIGNING_CERT: ${{ secrets.APPLE_SIGNING_CERTIFICATE }}
+          APPLE_SIGNING_CERT_PASSWORD: ${{ secrets.APPLE_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          # Store API key
+          echo "$APPLE_API_KEY" | base64 -d > ~/.apple-api-key.p8
+          chmod 600 ~/.apple-api-key.p8
+
+          # Import signing certificate
+          echo "$APPLE_SIGNING_CERT" | base64 -d > certificate.p12
+          security create-keychain -p buildtemporarykp buildtemporarykp.keychain
+          security set-keychain-settings -t 3600 -u buildtemporarykp.keychain
+          security unlock-keychain -p buildtemporarykp buildtemporarykp.keychain
+          security import certificate.p12 -P "$APPLE_SIGNING_CERT_PASSWORD" -k buildtemporarykp.keychain -T /usr/bin/codesign -T /usr/bin/security || true
+          rm certificate.p12
+
+          # Allow codesign to access the private key without GUI prompt (CI hang fix)
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k buildtemporarykp buildtemporarykp.keychain
+
+          # Add keychain to search list (preserve existing keychains)
+          security list-keychains -d user -s buildtemporarykp.keychain $(security list-keychains -d user | xargs)
+
+          # Discover the actual certificate hash
+          IDENTITY_LINE=$(security find-identity -v -p codesigning buildtemporarykp.keychain | grep "Developer ID Application" | head -1)
+          SIGNING_IDENTITY=$(echo "$IDENTITY_LINE" | awk '{print $2}')
+          echo "Found identity: $IDENTITY_LINE"
+          echo "SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_OUTPUT"
+
+          # Store notary credentials
+          xcrun notarytool store-credentials "SPOTTI_NOTARY" \
+            --key ~/.apple-api-key.p8 \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_ISSUER_ID"
+
       - name: Build DMG
+        env:
+          NOTARIZE_PROFILE: SPOTTI_NOTARY
+          SIGNING_IDENTITY: ${{ steps.configure-signing-credentials.outputs.SIGNING_IDENTITY }}
         run: |
           chmod +x scripts/build-dmg.sh scripts/build-rust.sh
-          scripts/build-dmg.sh --skip-sign --skip-notarize
+          scripts/build-dmg.sh
 
       - name: Extract version from tag
         id: version
